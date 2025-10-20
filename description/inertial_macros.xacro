@@ -4,6 +4,10 @@
     <!-- Specify some standard inertial calculations https://en.wikipedia.org/wiki/List_of_moments_of_inertia -->
     <!-- These make use of xacro's mathematical functionality --> 
 
+    <xacro:property name="chassis_x_dim" value="0.186"/>
+    <xacro:property name="chassis_y_dim" value="0.093"/>
+    <xacro:property name="chassis_z_dim" value="0.093"/>
+
     <xacro:macro name="inertial_box" params="mass x y z *origin">
         <inertial>
             <xacro:insert_block name="origin"/>

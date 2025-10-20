@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" >
+
+    <!-- CONSTANTS -->
+    <!-- <xacro:property name="pi" value="3.141592653589793"/> -->
+    <xacro:property name="wheel_space_to_chassis" value="0.004"/> <!-- Measured -->
+
+    <!-- CHASSIS -->
+    <xacro:property name="chassis_length" value="0.186"/> <!-- Measured -->
+    <xacro:property name="chassis_width"  value="0.093"/> <!-- Measured -->
+    <xacro:property name="chassis_height" value="0.091"/> <!-- Measured -->
+    <xacro:property name="chassis_mass"   value="0.70"/> <!-- Frame + battery (kg) -->
+
+    <xacro:property name="chassis_origin_x" value="0"/>
+    <xacro:property name="chassis_origin_y" value="0"/>
+    <xacro:property name="chassis_origin_z" value="0.0455"/> 
+
+    <!-- WHEELS PARAMETERS -->
+    <xacro:property name="wheel_radius" value="0.0325"/> <!-- Measured -->
+    <xacro:property name="wheel_length" value="0.030"/> <!-- Measured -->
+    <xacro:property name="wheel_mass"   value="0.0375"/> <!-- Estimated... -->
+
+    <xacro:property name="wheel_effort" value="1000"/>
+    <xacro:property name="wheel_velocity" value="1000"/>
+    <xacro:property name="wheel_damping" value="0.5"/>
+    <xacro:property name="wheel_friction" value="1.0"/>
+
+    <!-- WHEEL GEOMETRY -->
+    <xacro:property name="wheel_x_offset" value="${(chassis_length / 2) - wheel_radius}"/> <!-- Made wheel flush with chassis -->
+    <xacro:property name="wheel_y_offset" value="${(chassis_width / 2) + (wheel_length / 2) + wheel_space_to_chassis}"/>
+    <xacro:property name="wheel_z_offset" value="0.02"/>
+    <xacro:property name="wheel_diameter" value="${wheel_radius * 2}"/>
+    <xacro:property name="wheel_separation" value="${chassis_width + (wheel_length * 2) + (wheel_space_to_chassis * 2)}"/>
+
+    <!-- GAZEBO PLUGIN PARAMETERS -->
+    <xacro:property name="gazebo_max_wheel_torque" value="${wheel_effort}"/>
+    <xacro:property name="gazebo_max_wheel_acceleration" value="5.0"/>
+    <xacro:property name="gazebo_mu1" value="0.2"/>
+    <xacro:property name="gazebo_mu2" value="0.2"/>
+
+    <!-- COLORS -->
+    <material name="white"><color rgba="1 1 1 1"/></material>
+    <material name="orange"><color rgba="1 0.3 0.1 1"/></material>
+    <material name="blue"><color rgba="0.2 0.2 1 1"/></material>
+    <material name="black"><color rgba="0 0 0 1"/></material>
+
+</robot>
