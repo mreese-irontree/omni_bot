@@ -9,7 +9,7 @@
     <xacro:property name="chassis_length" value="0.186"/> <!-- Measured -->
     <xacro:property name="chassis_width"  value="0.093"/> <!-- Measured -->
     <xacro:property name="chassis_height" value="0.091"/> <!-- Measured -->
-    <xacro:property name="chassis_mass"   value="0.70"/> <!-- Frame + battery (kg) -->
+    <xacro:property name="chassis_mass"   value="0.70"/>  <!-- Frame + battery (kg) -->
 
     <xacro:property name="chassis_origin_x" value="0"/>
     <xacro:property name="chassis_origin_y" value="0"/>
@@ -17,31 +17,53 @@
 
     <!-- WHEELS PARAMETERS -->
     <xacro:property name="wheel_radius" value="0.0325"/> <!-- Measured -->
-    <xacro:property name="wheel_length" value="0.030"/> <!-- Measured -->
-    <xacro:property name="wheel_mass"   value="0.0375"/> <!-- Estimated... -->
+    <xacro:property name="wheel_length" value="0.030"/>  <!-- Measured -->
+    <xacro:property name="wheel_mass"   value="0.0375"/> <!-- Estimated -->
 
-    <xacro:property name="wheel_effort" value="1000"/>
+    <xacro:property name="wheel_effort"   value="1000"/>
     <xacro:property name="wheel_velocity" value="1000"/>
-    <xacro:property name="wheel_damping" value="0.5"/>
+    <xacro:property name="wheel_damping"  value="0.5"/>
     <xacro:property name="wheel_friction" value="1.0"/>
 
     <!-- WHEEL GEOMETRY -->
-    <xacro:property name="wheel_x_offset" value="${(chassis_length / 2) - wheel_radius}"/> <!-- Made wheel flush with chassis -->
-    <xacro:property name="wheel_y_offset" value="${(chassis_width / 2) + (wheel_length / 2) + wheel_space_to_chassis}"/>
-    <xacro:property name="wheel_z_offset" value="0.02"/>
-    <xacro:property name="wheel_diameter" value="${wheel_radius * 2}"/>
+    <xacro:property name="wheel_x_offset"   value="${(chassis_length / 2) - wheel_radius}"/> <!-- Made wheel flush with chassis -->
+    <xacro:property name="wheel_y_offset"   value="${(chassis_width / 2) + (wheel_length / 2) + wheel_space_to_chassis}"/>
+    <xacro:property name="wheel_z_offset"   value="0.02"/>
+    <xacro:property name="wheel_diameter"   value="${wheel_radius * 2}"/>
     <xacro:property name="wheel_separation" value="${chassis_width + (wheel_length * 2) + (wheel_space_to_chassis * 2)}"/>
 
+    <!-- LIDAR PARAMETERS -->
+    <xacro:property name="lidar_radius" value="0.0175"/> <!-- Measured -->
+    <xacro:property name="lidar_length" value="0.035"/>  <!-- Measured -->
+    <xacro:property name="lidar_mass"   value="0.0375"/> <!-- Estimated -->
+
+    <xacro:property name="lidar_origin_x" value="-0.023"/> <!-- Estimated -->
+    <xacro:property name="lidar_origin_y" value="0"/>
+    <xacro:property name="lidar_origin_z" value="${chassis_origin_z + chassis_height/2 + lidar_length/2}"/> 
+
+     <!-- CAMERA PARAMETERS -->
+    <xacro:property name="camera_size_width"  value="0.048"/>  <!-- Measured -->
+    <xacro:property name="camera_size_length" value="0.048"/>  <!-- Measured -->
+    <xacro:property name="camera_size_depth"  value="0.03"/>   <!-- Measured -->
+    <xacro:property name="camera_mass"        value="0.0375"/> <!-- Estimated -->
+
+    <xacro:property name="camera_origin_x" value="${chassis_length/2 + camera_size_depth/2}"/>
+    <xacro:property name="camera_origin_y" value="0"/>
+    <xacro:property name="camera_origin_z" value="${chassis_height/2}"/>
+
     <!-- GAZEBO PLUGIN PARAMETERS -->
-    <xacro:property name="gazebo_max_wheel_torque" value="${wheel_effort}"/>
+    <xacro:property name="gazebo_max_wheel_torque"       value="${wheel_effort}"/>
     <xacro:property name="gazebo_max_wheel_acceleration" value="5.0"/>
-    <xacro:property name="gazebo_mu1" value="0.2"/>
-    <xacro:property name="gazebo_mu2" value="0.2"/>
+    <xacro:property name="gazebo_mu1"                    value="0.2"/>
+    <xacro:property name="gazebo_mu2"                    value="0.2"/>
 
     <!-- COLORS -->
-    <material name="white"><color rgba="1 1 1 1"/></material>
-    <material name="orange"><color rgba="1 0.3 0.1 1"/></material>
-    <material name="blue"><color rgba="0.2 0.2 1 1"/></material>
-    <material name="black"><color rgba="0 0 0 1"/></material>
+    <xacro:macro name="materials">
+        <material name="white"><color rgba="1 1 1 1"/></material>
+        <material name="orange"><color rgba="1 0.3 0.1 1"/></material>
+        <material name="blue"><color rgba="0.2 0.2 1 1"/></material>
+        <material name="black"><color rgba="0 0 0 1"/></material>
+        <material name="red"><color rgba="1 0 0 1"/></material>
+    </xacro:macro>
 
 </robot>

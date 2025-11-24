@@ -3,6 +3,7 @@
 
     <xacro:include filename="inertial_macros.xacro"/>
     <xacro:include filename="robot_params.xacro"/>
+    <xacro:materials/>
 
     <!-- BASE LINK -->
     <link name="base_link"/>
@@ -29,7 +30,7 @@
             </geometry>
         </collision>
         <xacro:inertial_box mass="${chassis_mass}" x="${chassis_length}" y="${chassis_width}" z="${chassis_height}">
-            <origin xyz="0 0 0.0455" rpy="0 0 0"/>
+            <origin xyz="${chassis_origin_x} ${chassis_origin_y} ${chassis_origin_z}" rpy="0 0 0"/>
         </xacro:inertial_box>
     </link>
 
@@ -174,6 +175,14 @@
         <material>Gazebo/Black</material>
         <mu1>1.0</mu1>
         <mu2>1.0</mu2>
+    </gazebo>
+
+    <gazebo reference="laser_frame">
+        <material>Gazebo/Red</material>
+    </gazebo>
+
+    <gazebo reference="camera_link">
+        <material>Gazebo/Red</material>
     </gazebo>
 
 
