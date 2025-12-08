@@ -5,11 +5,11 @@
 
     <joint name="laser_joint" type="fixed">
         <parent link="chassis"/>
-        <child link="laser_frame"/>
-        <origin xyz="${lidar_origin_x} ${lidar_origin_y} ${lidar_origin_z}" rpy="0 0 0"/>
+        <child link="base_laser"/>
+        <origin xyz="${lidar_origin_x} ${lidar_origin_y} ${lidar_origin_z}" rpy="0 ${-pi/2} 0"/>
     </joint>
 
-    <link name="laser_frame">
+    <link name="base_laser">
         <visual>
             <geometry>
                 <cylinder radius="${lidar_radius}" length="${lidar_length}"/>
@@ -26,7 +26,7 @@
         </xacro:inertial_cylinder>
     </link>
 
-    <gazebo reference="laser_frame">
+    <gazebo reference="base_laser">
         <sensor name="laser" type="ray">
             <pose> 0 0 0 0 0 0 </pose>
                 <visualize>true</visualize> <!-- visualize points in gazebo -->
