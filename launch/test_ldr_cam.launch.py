@@ -26,7 +26,7 @@ def generate_launch_description():
     robot_description_config = xacro.process_file(xacro_file)
 
     params = {
-        'robot_descrption': robot_description_config.toxml(),
+        'robot_description': robot_description_config.toxml(),
         'use_sim_time': use_sim_time
     }
 
@@ -51,7 +51,7 @@ def generate_launch_description():
 
 
     # CAMERA
-    tof_script_dir = os.path.expanduser('~/omni_bot_ws/src/Arducam_tof_camera/ros_publisher/src/arducam/arducam_rclpy_tof_pointcloud/arducam_rclpy_tof_pointcloud')
+    tof_script_dir = os.path.expanduser('~/omni_bot_ws/src/Arducam_tof_camera/ros2_publisher/src/arducam/arducam_rclpy_tof_pointcloud/arducam_rclpy_tof_pointcloud')
     tof_script_path = os.path.join(tof_script_dir, 'tof_pointcloud.py')
 
     camera_action = ExecuteProcess(
