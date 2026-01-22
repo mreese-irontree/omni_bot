@@ -31,12 +31,22 @@ def generate_launch_description():
     }
 
 
-    # robot_state_publisher (TF + robot_descrption)
+    # robot_state_publisher
     rsp = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
         output='screen',
         parameters=[params],
+    )
+
+
+    # joint_state_publisher
+    jsp = Node(
+        package='joint_state_publisher',
+        executable='joint_state_publisher',
+        name='joint_state_publisher',
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time}],
     )
 
 
@@ -80,6 +90,7 @@ def generate_launch_description():
         DeclareLaunchArgument('sensor_delay_sec', default_value='2.0', description='Delay (seconds) before starting sensors'),
 
         rsp,
+        jsp,
         lidar_delayed,
         camera_delayed,
     ])
