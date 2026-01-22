@@ -56,7 +56,6 @@ def generate_launch_description():
 
     lidar_action = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(ld19_launch),
-        launch_arguments={'serial_port': LIDAR_PORT, 'serial_baudrate': LIDAR_BAUD,}.items(),
         condition=IfCondition(start_lidar),
     )
 
