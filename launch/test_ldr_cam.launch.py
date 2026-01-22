@@ -55,7 +55,7 @@ def generate_launch_description():
     #ld19_launch = os.path.join(ldlidar_share, 'launch', 'ld19.launch.py')
 
     LIDAR_PORT = '/dev/serial/by-path/platform-fd500000.pcie-pci-000:01:00.0-usb-0:1.1:1.0-port0'
-    LIDAR_BAUD = '230400'
+    LIDAR_BAUD = 230400
 
     lidar_node = Node(
         package='ldlidar_stl_ros2',
