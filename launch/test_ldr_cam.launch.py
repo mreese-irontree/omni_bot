@@ -51,26 +51,14 @@ def generate_launch_description():
 
 
     # LIDAR
-    #ldlidar_share = get_package_share_directory('ldlidar_stl_ros2')
-    #ld19_launch = os.path.join(ldlidar_share, 'launch', 'ld19.launch.py')
+    ldlidar_share = get_package_share_directory('ldlidar_stl_ros2')
+    ld19_launch = os.path.join(ldlidar_share, 'launch', 'ld19.launch.py')
 
-    LIDAR_PORT = '/dev/serial/by-path/platform-fd500000.pcie-pci-0000:01:00.0-usb-0:1.1:1.0-port0'
-    LIDAR_BAUD = 230400
-
-    lidar_node = Node(
-        package='ldlidar_stl_ros2',
-        executable='ldlidar_stl_ros2_node',
-        name='ldlidar',
-        output='screen',
-        parameters=[{'port_name': LIDAR_PORT, 'port_baudrate': LIDAR_BAUD, 'use_sim_time': use_sim_time,}],
+    lidar_action = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(ld19_launch),
+        launch_arguments={'serial_port': LIDAR_PORT, 'serial_baudrate': LIDAR_BAUD,}.items(),
         condition=IfCondition(start_lidar),
     )
-
-    #lidar_action = IncludeLaunchDescription(
-    #    PythonLaunchDescriptionSource(ld19_launch),
-    #    launch_arguments={'serial_port': LIDAR_PORT, 'serial_baudrate': LIDAR_BAUD,}.items(),
-    #    condition=IfCondition(start_lidar),
-    #)
 
 
     # CAMERA
@@ -88,7 +76,7 @@ def generate_launch_description():
     # Delay Sensors
     lidar_delayed = TimerAction(
         period=sensor_delay_sec,
-        actions=[lidar_node]
+        actions=[lidar_action]
     )
 
     camera_delayed = TimerAction(
