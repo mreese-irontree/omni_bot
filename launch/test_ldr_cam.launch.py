@@ -60,7 +60,7 @@ def generate_launch_description():
     lidar_node = Node(
         package='ldlidar_stl_ros2',
         executable='ldlidar_stl_ros2_node',
-        name='ldlidar',
+        name='LD19',
         output='screen',
         parameters=[{'port_name': LIDAR_PORT, 'port_baudrate': LIDAR_BAUD, 'use_sim_time': use_sim_time,}],
         condition=IfCondition(start_lidar),
