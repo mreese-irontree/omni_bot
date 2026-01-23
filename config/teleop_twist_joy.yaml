@@ -1,6 +1,6 @@
 teleop_twist_joy_node:
   ros__parameters:
-    requre_enable_button: false
+    require_enable_button: false
     enable_button: 4 #LB
     enable_turbo_button: 5 #RB
 
