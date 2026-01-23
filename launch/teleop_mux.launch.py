@@ -35,6 +35,20 @@ def generate_launch_description():
         remappings=[('/cmd_vel_out', '/cmd_vel'),],
     )
 
+    esp32_bridge = Node(
+    package='omni_bot',
+    executable='cmdvel_to_esp32.py',
+    name='cmdvel_to_esp32',
+    output='screen',
+    parameters=[{
+        'port': '/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0',
+        'baud': 115200,
+        'wheel_separation_m': 0.30,
+        'max_linear_mps': 0.6,
+        'timeout_sec': 0.5,
+    }]
+)
+
     return LaunchDescription([
         joy_node,
         teleop_node,
