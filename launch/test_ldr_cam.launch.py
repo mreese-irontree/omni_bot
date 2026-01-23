@@ -46,7 +46,7 @@ def generate_launch_description():
         executable='joint_state_publisher',
         name='joint_state_publisher',
         output='screen',
-        parameters=['params'],
+        parameters=[params],
     )
 
 
