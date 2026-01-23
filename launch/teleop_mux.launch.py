@@ -6,8 +6,8 @@ from launch_ros.actions import Node
 def generate_launch_description():
     pkg = get_package_share_directory('omni_bot')
 
-    teleop_yaml = os.path.join(pkg, 'config', 'teleop_twist_joy.yaml')
-    mux_yaml = os.path.join(pkg, 'config', 'twist_mux.yaml')
+    teleop_yaml = os.path.expanduser('~/omni_bot_ws/src/omni_bot/config/teleop_twist_joy.yaml')
+    mux_yaml = os.path.expanduser('~/omni_bot_ws/src/omni_bot/config/twist_mux.yaml')
 
     joy_node = Node(
         package='joy',
