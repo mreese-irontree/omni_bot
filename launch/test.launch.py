@@ -77,20 +77,20 @@ def generate_launch_description():
     )
 
     # ESP32 cmd_vel bridge (Nav2/SLAM publishes /cmd_vel -> ESP32 in AUTO mode)
-    esp32_bridge = Node(
-        package='omni_bot',
-        executable='cmdvel_to_esp32.py',
-        name='cmdvel_to_esp32',
+    esp32_bridge = ExecuteProcess(
+        cmd=[
+            'python3',
+            os.path.expanduser('~/omni_bot_ws/src/omni_bot/scripts/cmdvel_to_esp32.py'),
+            '--ros-args',
+            '-p', 'port:=/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0',
+            '-p', 'baud:=115200',
+            '-p', 'wheel_separation_m:=0.30',
+            '-p', 'max_linear_mps:=0.60',
+            '-p', 'timeout_sec:=0.5',
+        ],
         output='screen',
-        condition=IfCondition(start_esp32_bridge),
-        parameters=[{
-            'port': esp32_port,
-            'baud': esp32_baud,
-            'wheel_separation_m': wheel_separation_m,
-            'max_linear_mps': max_linear_mps,
-            'timeout_sec': esp32_timeout_sec,
-        }]
     )
+
 
     # Delay Sensors
     lidar_delayed = TimerAction(
