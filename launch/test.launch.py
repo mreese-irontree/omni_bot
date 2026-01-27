@@ -90,8 +90,7 @@ def generate_launch_description():
     # cmd_vel -> ESP32 bridge (script)
     # IMPORTANT: Use ExecuteProcess (NOT Node) since it's not installed as a ROS exec
     # --------------------
-    bridge_script_path = os.path.join(pkg_path, 'scripts', 'cmdvel_to_esp32.py')
-
+    bridge_script_path = os.path.expanduser('~/omi_bot_ws/src/omni_bot/scripts/cmdvel_to_esp32.py')
     bridge_action = ExecuteProcess(
         cmd=[
             'python3', bridge_script_path,
