@@ -16,9 +16,12 @@ def generate_launch_description():
 
     # Launch Arguments
     use_sim_time = LaunchConfiguration('use_sim_time')
+    
     start_lidar = LaunchConfiguration('start_lidar')
     start_camera = LaunchConfiguration('start_camera')
-    sensor_delay_sec = LaunchConfiguration('sensor_delay_sec')
+
+    lidar_delay_sec = LaunchConfiguration('lidar_delay_sec')
+    camera_delay_sec = LaunchConfiguration('camera_delay_sec')
 
     start_esp32_bridge = LaunchConfiguration('start_esp32_bridge')
     esp32_port = LaunchConfiguration('esp32_port')
@@ -94,12 +97,12 @@ def generate_launch_description():
 
     # Delay Sensors
     lidar_delayed = TimerAction(
-        period=sensor_delay_sec,
+        period=lidar_delay_sec,
         actions=[lidar_action]
     )
 
     camera_delayed = TimerAction(
-        period=sensor_delay_sec,
+        period=camera_delay_sec,
         actions=[camera_action],
     )
 
@@ -108,7 +111,9 @@ def generate_launch_description():
 
         DeclareLaunchArgument('start_lidar', default_value='true', description='Start LD19 LiDAR if true'),
         DeclareLaunchArgument('start_camera', default_value='true', description='Start Arducam ToF publisher if true'),
-        DeclareLaunchArgument('sensor_delay_sec', default_value='2.0', description='Delay (seconds) before starting sensors'),
+        
+        DeclareLaunchArgument('lidar_delay_sec', default_value='2.0', description='Delay (seconds) before starting LiDAR'),
+        DeclareLaunchArgument('camera_delay_sec', default_value='2.0', description='Delay (seconds) before starting Camera'),
 
         # ESP32 bridge args
         DeclareLaunchArgument('start_esp32_bridge', default_value='true', description='Start cmd_vel -> ESP32 bridge'),
@@ -123,7 +128,7 @@ def generate_launch_description():
         DeclareLaunchArgument('esp32_timeout_sec', default_value='0.5', description='Stop if no cmd_vel seen'),
 
         rsp,
-        jsp,            # optional; keep for now
+        jsp,            
         lidar_delayed,
         camera_delayed,
         esp32_bridge,
