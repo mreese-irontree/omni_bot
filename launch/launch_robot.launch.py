@@ -95,17 +95,29 @@ def generate_launch_description():
         condition=IfCondition(start_cmdvel_odom),
     )
 
+    laser_odom_action = ExecuteProcess(
+    cmd=[
+        'ros2', 'run', 'ros2_laser_scan_matcher', 'laser_scan_matcher',
+        '--ros-args',
+        '-p', 'publish_tf:=true',
+        '-p', 'publish_odom:=/odom',
+    ],
+    output='screen',
+)
+
+
     # Delays (USB devices can be flaky on boot)
     lidar_delayed = TimerAction(period=sensor_delay_sec, actions=[lidar_action])
     camera_delayed = TimerAction(period=sensor_delay_sec, actions=[camera_action])
     control_delayed = TimerAction(period=sensor_delay_sec, actions=[esp32_bridge_action, cmdvel_odom_action])
+    control_delayed = TimerAction(period=sensor_delay_sec, actions=[esp32_bridge_action, laser_odom_action])
 
     return LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value='false'),
         DeclareLaunchArgument('start_lidar', default_value='true'),
         DeclareLaunchArgument('start_camera', default_value='true'),
         DeclareLaunchArgument('start_esp32_bridge', default_value='true'),
-        DeclareLaunchArgument('start_cmdvel_odom', default_value='true'),
+        DeclareLaunchArgument('start_cmdvel_odom', default_value='false'),
         DeclareLaunchArgument('sensor_delay_sec', default_value='2.0'),
 
         rsp_node,
