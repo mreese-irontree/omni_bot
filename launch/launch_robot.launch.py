@@ -17,16 +17,19 @@ def generate_launch_description():
     start_lidar = LaunchConfiguration('start_lidar')
     start_camera = LaunchConfiguration('start_camera')
     start_esp32_bridge = LaunchConfiguration('start_esp32_bridge')
-    start_cmdvel_odom = LaunchConfiguration('start_cmdvel_odom')
+    start_laser_odom = LaunchConfiguration('start_laser_odom')
     sensor_delay_sec = LaunchConfiguration('sensor_delay_sec')
 
-    # Package share (safe) + FULL PATHS (explicit)
+    # Package share + FULL PATHS
     omni_bot_share = get_package_share_directory('omni_bot')
 
     # URDF
     xacro_file = os.path.join(omni_bot_share, 'description', 'robot.urdf.xacro')
     robot_description_config = xacro.process_file(xacro_file)
-    robot_description = {'robot_description': robot_description_config.toxml(), 'use_sim_time': use_sim_time}
+    robot_description = {
+        'robot_description': robot_description_config.toxml(),
+        'use_sim_time': use_sim_time
+    }
 
     rsp_node = Node(
         package='robot_state_publisher',
@@ -35,7 +38,6 @@ def generate_launch_description():
         parameters=[robot_description],
     )
 
-    # Optional joint_state_publisher (not strictly required unless you rely on it)
     jsp_node = Node(
         package='joint_state_publisher',
         executable='joint_state_publisher',
@@ -43,7 +45,7 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}],
     )
 
-    # LiDAR launch include
+    # LiDAR include
     ldlidar_share = get_package_share_directory('ldlidar_stl_ros2')
     ld19_launch = os.path.join(ldlidar_share, 'launch', 'ld19.launch.py')
     lidar_action = IncludeLaunchDescription(
@@ -51,7 +53,7 @@ def generate_launch_description():
         condition=IfCondition(start_lidar),
     )
 
-    # Depth camera publisher (kept running for RViz visualization; not used in Nav2 costmaps)
+    # Depth camera publisher (visualization only)
     tof_script_dir = '/home/matt/omni_bot_ws/src/Arducam_tof_camera/ros2_publisher/src/arducam/arducam_rclpy_tof_pointcloud/arducam_rclpy_tof_pointcloud'
     tof_script_path = tof_script_dir + '/tof_pointcloud.py'
     camera_action = ExecuteProcess(
@@ -61,7 +63,7 @@ def generate_launch_description():
         condition=IfCondition(start_camera),
     )
 
-    # FULL PATH: cmd_vel -> ESP32 bridge
+    # cmd_vel -> ESP32 bridge
     esp32_bridge_script = '/home/matt/omni_bot_ws/src/omni_bot/scripts/cmdvel_to_esp32.py'
     esp32_bridge_action = ExecuteProcess(
         cmd=[
@@ -77,47 +79,42 @@ def generate_launch_description():
         condition=IfCondition(start_esp32_bridge),
     )
 
-    # FULL PATH: cmd_vel -> odom TF
-    cmdvel_odom_script = '/home/matt/omni_bot_ws/src/omni_bot/scripts/cmdvel_to_odom.py'
-    cmdvel_odom_action = ExecuteProcess(
-        cmd=[
-            'python3', cmdvel_odom_script,
-            '--ros-args',
-            '-p', 'cmd_vel_topic:=/cmd_vel',
-            '-p', 'odom_topic:=/odom',
-            '-p', 'base_frame_id:=base_link',
-            '-p', 'odom_frame_id:=odom',
-            '-p', 'publish_tf:=true',
-            '-p', 'timeout_sec:=0.5',
-            '-p', 'rate_hz:=50.0',
-        ],
+    # LiDAR scan matching odom (recommended: provides odom->base_link TF + /odom)
+    # NOTE: This requires: sudo apt install ros-jazzy-scan-tools
+    laser_scan_matcher_node = Node(
+        package='laser_scan_matcher',
+        executable='laser_scan_matcher',
+        name='laser_scan_matcher',
         output='screen',
-        condition=IfCondition(start_cmdvel_odom),
+        condition=IfCondition(start_laser_odom),
+        parameters=[{
+            'use_sim_time': False,
+            'scan_topic': '/scan',
+            'base_frame': 'base_link',
+            'laser_frame': 'base_laser',   # matches your /scan frame_id
+            'odom_frame': 'odom',
+            'fixed_frame': 'odom',
+            'publish_tf': True,
+            'publish_odom': True,
+        }],
     )
 
-    laser_odom_action = ExecuteProcess(
-    cmd=[
-        'ros2', 'run', 'ros2_laser_scan_matcher', 'laser_scan_matcher',
-        '--ros-args',
-        '-p', 'publish_tf:=true',
-        '-p', 'publish_odom:=/odom',
-    ],
-    output='screen',
-)
-
-
-    # Delays (USB devices can be flaky on boot)
+    # Delays
     lidar_delayed = TimerAction(period=sensor_delay_sec, actions=[lidar_action])
     camera_delayed = TimerAction(period=sensor_delay_sec, actions=[camera_action])
-    control_delayed = TimerAction(period=sensor_delay_sec, actions=[esp32_bridge_action, cmdvel_odom_action])
-    control_delayed = TimerAction(period=sensor_delay_sec, actions=[esp32_bridge_action, laser_odom_action])
+
+    # Start bridges + laser odom together after delay
+    control_delayed = TimerAction(
+        period=sensor_delay_sec,
+        actions=[esp32_bridge_action, laser_scan_matcher_node]
+    )
 
     return LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value='false'),
         DeclareLaunchArgument('start_lidar', default_value='true'),
         DeclareLaunchArgument('start_camera', default_value='true'),
         DeclareLaunchArgument('start_esp32_bridge', default_value='true'),
-        DeclareLaunchArgument('start_cmdvel_odom', default_value='false'),
+        DeclareLaunchArgument('start_laser_odom', default_value='true'),
         DeclareLaunchArgument('sensor_delay_sec', default_value='2.0'),
 
         rsp_node,
