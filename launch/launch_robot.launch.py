@@ -20,16 +20,13 @@ def generate_launch_description():
     start_cmdvel_odom = LaunchConfiguration('start_cmdvel_odom')
     sensor_delay_sec = LaunchConfiguration('sensor_delay_sec')
 
-    # Package share (safe)
     omni_bot_share = get_package_share_directory('omni_bot')
 
-    # URDF
+    # URDF -> robot_state_publisher
     xacro_file = os.path.join(omni_bot_share, 'description', 'robot.urdf.xacro')
     robot_description_config = xacro.process_file(xacro_file)
-    robot_description = {
-        'robot_description': robot_description_config.toxml(),
-        'use_sim_time': use_sim_time
-    }
+    robot_description = {'robot_description': robot_description_config.toxml(),
+                         'use_sim_time': use_sim_time}
 
     rsp_node = Node(
         package='robot_state_publisher',
@@ -38,13 +35,10 @@ def generate_launch_description():
         parameters=[robot_description],
     )
 
-    # Optional joint_state_publisher
-    jsp_node = Node(
-        package='joint_state_publisher',
-        executable='joint_state_publisher',
-        output='screen',
-        parameters=[{'use_sim_time': use_sim_time}],
-    )
+    # NOTE:
+    # joint_state_publisher is NOT needed for your real robot right now.
+    # It can also be confusing / noisy if not configured with a URDF file parameter.
+    # So we omit it.
 
     # LiDAR include
     ldlidar_share = get_package_share_directory('ldlidar_stl_ros2')
@@ -64,7 +58,7 @@ def generate_launch_description():
         condition=IfCondition(start_camera),
     )
 
-    # cmd_vel -> ESP32 bridge
+    # cmd_vel -> ESP32 bridge (FULL PATH)
     esp32_bridge_script = '/home/matt/omni_bot_ws/src/omni_bot/scripts/cmdvel_to_esp32.py'
     esp32_bridge_action = ExecuteProcess(
         cmd=[
@@ -80,7 +74,7 @@ def generate_launch_description():
         condition=IfCondition(start_esp32_bridge),
     )
 
-    # cmd_vel -> odom TF (FAKE odom; useful for RViz; not accurate for SLAM if robot isn't moving)
+    # cmd_vel -> odom TF (FULL PATH)  **IMPORTANT for SLAM/NAV**
     cmdvel_odom_script = '/home/matt/omni_bot_ws/src/omni_bot/scripts/cmdvel_to_odom.py'
     cmdvel_odom_action = ExecuteProcess(
         cmd=[
@@ -92,19 +86,15 @@ def generate_launch_description():
             '-p', 'odom_frame_id:=odom',
             '-p', 'publish_tf:=true',
             '-p', 'timeout_sec:=0.5',
-            '-p', 'rate_hz:=50.0',
+            '-p', 'rate_hz:=30.0',
         ],
         output='screen',
         condition=IfCondition(start_cmdvel_odom),
     )
 
-    # Delays (USB devices can be flaky on boot)
     lidar_delayed = TimerAction(period=sensor_delay_sec, actions=[lidar_action])
     camera_delayed = TimerAction(period=sensor_delay_sec, actions=[camera_action])
-    control_delayed = TimerAction(
-        period=sensor_delay_sec,
-        actions=[esp32_bridge_action, cmdvel_odom_action],
-    )
+    control_delayed = TimerAction(period=sensor_delay_sec, actions=[esp32_bridge_action, cmdvel_odom_action])
 
     return LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value='false'),
@@ -112,13 +102,12 @@ def generate_launch_description():
         DeclareLaunchArgument('start_camera', default_value='true'),
         DeclareLaunchArgument('start_esp32_bridge', default_value='true'),
 
-        # IMPORTANT: for SLAM, default this to false unless you're actually driving on the ground
-        DeclareLaunchArgument('start_cmdvel_odom', default_value='false'),
+        # Turn this ON for SLAM / Nav2 (gives odom->base_link)
+        DeclareLaunchArgument('start_cmdvel_odom', default_value='true'),
 
         DeclareLaunchArgument('sensor_delay_sec', default_value='2.0'),
 
         rsp_node,
-        jsp_node,
         lidar_delayed,
         camera_delayed,
         control_delayed,
