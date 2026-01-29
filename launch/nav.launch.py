@@ -1,6 +1,6 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, ExecuteProcess
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from ament_index_python.packages import get_package_share_directory
@@ -8,7 +8,7 @@ from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
     # Args
-    use_nav2 = LaunchConfiguration('use_nav2')   # false => wander mode
+    use_nav2 = LaunchConfiguration('use_nav2')   # "true" or "false"
     map_filename = LaunchConfiguration('map')    # used only when use_nav2:=true
 
     map_directory = '/home/matt/omni_bot_maps'
@@ -36,7 +36,7 @@ def generate_launch_description():
             '-p', 'rate_hz:=15.0',
         ],
         output='screen',
-        condition=IfCondition(use_nav2.__invert__()),  # run wander when use_nav2 is false
+        condition=UnlessCondition(use_nav2),  # run when use_nav2 is false
     )
 
     # -------- Optional Nav2 bringup (requires a MAP) --------
@@ -53,7 +53,7 @@ def generate_launch_description():
             'autostart': 'true',
             'params_file': nav2_params,
         }.items(),
-        condition=IfCondition(use_nav2),
+        condition=IfCondition(use_nav2),  # run when use_nav2 is true
     )
 
     return LaunchDescription([
