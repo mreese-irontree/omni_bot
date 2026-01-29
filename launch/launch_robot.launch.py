@@ -17,10 +17,10 @@ def generate_launch_description():
     start_lidar = LaunchConfiguration('start_lidar')
     start_camera = LaunchConfiguration('start_camera')
     start_esp32_bridge = LaunchConfiguration('start_esp32_bridge')
-    start_laser_odom = LaunchConfiguration('start_laser_odom')
+    start_cmdvel_odom = LaunchConfiguration('start_cmdvel_odom')
     sensor_delay_sec = LaunchConfiguration('sensor_delay_sec')
 
-    # Package share + FULL PATHS
+    # Package share (safe)
     omni_bot_share = get_package_share_directory('omni_bot')
 
     # URDF
@@ -38,6 +38,7 @@ def generate_launch_description():
         parameters=[robot_description],
     )
 
+    # Optional joint_state_publisher
     jsp_node = Node(
         package='joint_state_publisher',
         executable='joint_state_publisher',
@@ -53,7 +54,7 @@ def generate_launch_description():
         condition=IfCondition(start_lidar),
     )
 
-    # Depth camera publisher (visualization only)
+    # Depth camera publisher (for RViz only)
     tof_script_dir = '/home/matt/omni_bot_ws/src/Arducam_tof_camera/ros2_publisher/src/arducam/arducam_rclpy_tof_pointcloud/arducam_rclpy_tof_pointcloud'
     tof_script_path = tof_script_dir + '/tof_pointcloud.py'
     camera_action = ExecuteProcess(
@@ -79,34 +80,30 @@ def generate_launch_description():
         condition=IfCondition(start_esp32_bridge),
     )
 
-    # LiDAR scan matching odom (recommended: provides odom->base_link TF + /odom)
-    # NOTE: This requires: sudo apt install ros-jazzy-scan-tools
-    laser_scan_matcher_node = Node(
-        package='laser_scan_matcher',
-        executable='laser_scan_matcher',
-        name='laser_scan_matcher',
+    # cmd_vel -> odom TF (FAKE odom; useful for RViz; not accurate for SLAM if robot isn't moving)
+    cmdvel_odom_script = '/home/matt/omni_bot_ws/src/omni_bot/scripts/cmdvel_to_odom.py'
+    cmdvel_odom_action = ExecuteProcess(
+        cmd=[
+            'python3', cmdvel_odom_script,
+            '--ros-args',
+            '-p', 'cmd_vel_topic:=/cmd_vel',
+            '-p', 'odom_topic:=/odom',
+            '-p', 'base_frame_id:=base_link',
+            '-p', 'odom_frame_id:=odom',
+            '-p', 'publish_tf:=true',
+            '-p', 'timeout_sec:=0.5',
+            '-p', 'rate_hz:=50.0',
+        ],
         output='screen',
-        condition=IfCondition(start_laser_odom),
-        parameters=[{
-            'use_sim_time': False,
-            'scan_topic': '/scan',
-            'base_frame': 'base_link',
-            'laser_frame': 'base_laser',   # matches your /scan frame_id
-            'odom_frame': 'odom',
-            'fixed_frame': 'odom',
-            'publish_tf': True,
-            'publish_odom': True,
-        }],
+        condition=IfCondition(start_cmdvel_odom),
     )
 
-    # Delays
+    # Delays (USB devices can be flaky on boot)
     lidar_delayed = TimerAction(period=sensor_delay_sec, actions=[lidar_action])
     camera_delayed = TimerAction(period=sensor_delay_sec, actions=[camera_action])
-
-    # Start bridges + laser odom together after delay
     control_delayed = TimerAction(
         period=sensor_delay_sec,
-        actions=[esp32_bridge_action, laser_scan_matcher_node]
+        actions=[esp32_bridge_action, cmdvel_odom_action],
     )
 
     return LaunchDescription([
@@ -114,7 +111,10 @@ def generate_launch_description():
         DeclareLaunchArgument('start_lidar', default_value='true'),
         DeclareLaunchArgument('start_camera', default_value='true'),
         DeclareLaunchArgument('start_esp32_bridge', default_value='true'),
-        DeclareLaunchArgument('start_laser_odom', default_value='true'),
+
+        # IMPORTANT: for SLAM, default this to false unless you're actually driving on the ground
+        DeclareLaunchArgument('start_cmdvel_odom', default_value='false'),
+
         DeclareLaunchArgument('sensor_delay_sec', default_value='2.0'),
 
         rsp_node,
