@@ -5,10 +5,12 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    # Bring up robot (URDF, lidar, cmdvel bridges, etc.)
     launch_robot = IncludeLaunchDescription(
         PythonLaunchDescriptionSource('/home/matt/omni_bot_ws/src/omni_bot/launch/launch_robot.launch.py'),
     )
 
+    # slam_toolbox params (FULL PATH)
     slam_params = '/home/matt/omni_bot_ws/src/omni_bot/config/slam_toolbox.yaml'
 
     slam_toolbox_node = Node(
@@ -19,6 +21,7 @@ def generate_launch_description():
         parameters=[slam_params],
     )
 
+    # Lifecycle manager to configure+activate slam_toolbox
     lifecycle_manager = Node(
         package='nav2_lifecycle_manager',
         executable='lifecycle_manager',
