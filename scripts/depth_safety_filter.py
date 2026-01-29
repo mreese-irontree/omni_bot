@@ -32,7 +32,7 @@ class DepthSafetyFilter(Node):
         self.declare_parameter('roi_y_max',  0.25)
 
         # Ignore floor: only consider "low obstacles" above ground
-        self.declare_parameter('min_z', 0.15)   # raise if floor triggers
+        self.declare_parameter('min_z', 0.50)   # raise if floor triggers
         self.declare_parameter('max_z', 0.70)
 
         # Behavior thresholds
