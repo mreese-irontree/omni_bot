@@ -31,7 +31,6 @@ def generate_launch_description():
             'use_sim_time': False,
             'autostart': True,
             'node_names': ['slam_toolbox'],
-            'bond_timeout': 0.0,
         }],
     )
 
