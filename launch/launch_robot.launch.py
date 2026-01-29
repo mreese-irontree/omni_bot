@@ -113,7 +113,7 @@ def generate_launch_description():
         DeclareLaunchArgument('start_esp32_bridge', default_value='true'),
 
         # IMPORTANT: for SLAM, default this to false unless you're actually driving on the ground
-        DeclareLaunchArgument('start_cmdvel_odom', default_value='false'),
+        DeclareLaunchArgument('start_cmdvel_odom', default_value='true'),
 
         DeclareLaunchArgument('sensor_delay_sec', default_value='2.0'),
 
