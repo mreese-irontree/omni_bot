@@ -21,23 +21,44 @@ def generate_launch_description():
         )
     )
 
-    # -------- Wander (LiDAR-only) --------
-    wander_script = '/home/matt/omni_bot_ws/src/omni_bot/scripts/wander_lidar.py'
+    # -------- Wander (LiDAR wall-follow + explore) --------
+    wander_script = '/home/matt/omni_bot_ws/src/omni_bot/scripts/wander_wall_follow.py'
     wander = ExecuteProcess(
         cmd=[
             'python3', wander_script,
             '--ros-args',
             '-p', 'scan_topic:=/scan',
-            '-p', 'cmd_vel_topic:=/cmd_vel',
-            '-p', 'forward_speed:=0.12',
-            '-p', 'turn_speed:=0.65',
+            '-p', 'cmd_vel_topic:=/cmd_vel_raw',
+            '-p', 'forward_speed:=0.14',
+            '-p', 'turn_speed:=0.80',
             '-p', 'front_stop_m:=0.55',
-            '-p', 'side_clear_m:=0.40',
+            '-p', 'front_slow_m:=0.80',
+            '-p', 'wall_target_m:=0.55',
+            '-p', 'wall_kp:=1.2',
             '-p', 'rate_hz:=15.0',
         ],
         output='screen',
-        condition=UnlessCondition(use_nav2),  # run when use_nav2 is false
+        condition=UnlessCondition(use_nav2),
     )
+
+    # -------- Depth safety gate (low obstacles) --------
+    depth_filter_script = '/home/matt/omni_bot_ws/src/omni_bot/scripts/depth_safety_filter.py'
+    depth_filter = ExecuteProcess(
+        cmd=[
+            'python3', depth_filter_script,
+            '--ros-args',
+            '-p', 'cmd_vel_in:=/cmd_vel_raw',
+            '-p', 'cmd_vel_out:=/cmd_vel',
+            '-p', 'cloud_topic:=/point_cloud',
+            '-p', 'stop_dist_m:=0.35',
+            '-p', 'slow_dist_m:=0.55',
+            '-p', 'min_z:=0.05',
+            '-p', 'max_z:=0.70',
+        ],
+        output='screen',
+        condition=UnlessCondition(use_nav2),
+    )
+
 
     # -------- Optional Nav2 bringup (requires a MAP) --------
     nav2_bringup_share = get_package_share_directory('nav2_bringup')
@@ -69,5 +90,6 @@ def generate_launch_description():
         ),
         launch_robot,
         wander,
+        depth_filter,
         nav2,
     ])
