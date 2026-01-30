@@ -58,7 +58,7 @@ def generate_launch_description():
                 "-p", "scan_topic:=/scan",
                 "-p", "cmd_topic:=/cmd_vel_raw",
                 "-p", ["follow_side:=", follow_side],
-                "-p", "scan_yaw_offset_deg:=-90.0"
+                "-p", "scan_yaw_offset_deg:=-90.0",
                 "-p", "desired_dist:=0.35",
                 "-p", "linear_speed:=0.20",
                 "-p", "publish_rate_hz:=20.0",
@@ -82,7 +82,6 @@ def generate_launch_description():
                 "-p", "hold_stop_ms:=400",
                 "-p", "publish_rate_hz:=20.0",
                 "-p", "decimation:=8",
-                "-p", "acquire_turn:=0.0",
             ],
             output="screen"
         ),
