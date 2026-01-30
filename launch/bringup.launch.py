@@ -36,8 +36,8 @@ def generate_launch_description():
     to_esp = os.path.join(scripts_dir, "cmdvel_to_esp32.py")
 
     return LaunchDescription([
-        DeclareLaunchArgument("lidar_port", default_value="/dev/ttyUSB0"),
-        DeclareLaunchArgument("esp_port", default_value="/dev/ttyUSB1"),
+        DeclareLaunchArgument("lidar_port", default_value="/dev/serial/by-path/platform-fd500000.pcie-pci-0000:01:00.0-usb-0:1.1:1.0-port0"),
+        DeclareLaunchArgument("esp_port", default_value="/dev/serial/by-path/platform-fd500000.pcie-pci-0000:01:00.0-usb-0:1.2:1.0-port0"),
         DeclareLaunchArgument("esp_baud", default_value="115200"),
         DeclareLaunchArgument("follow_side", default_value="left"),
 
