@@ -88,18 +88,6 @@ def generate_launch_description():
                 "-p", "front_stop_dist:=0.45",
                 "-p", "front_slow_dist:=1.00",
                 "-p", "front_sector_half_deg:=30.0",
-
-                "-p", "linear_speed:=0.16",
-                "-p", "kp:=1.6",
-                "-p", "kd:=0.30",
-                "-p", "heading_k:=0.55",
-                "-p", "window_half_deg:=14.0",
-                "-p", "side_lpf_alpha:=0.15",
-                "-p", "w_rate_limit:=1.8",
-                "-p", "front_stop_dist:=0.55",
-                "-p", "front_slow_dist:=1.20",
-
-
             ],
             output="screen"
         ),
@@ -149,10 +137,6 @@ def generate_launch_description():
                 "-p", "cmd_timeout_s:=0.5",
                 "-p", "v_to_cmd:=1.0",
                 "-p", "w_to_cmd:=0.6",
-                "-p", "invert_w:=true",
-                "-p", "max_cmd:=0.60",
-                "-p", "slew_rate:=2.0",
-
             ],
             output="screen"
         ),
