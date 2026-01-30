@@ -1,0 +1,104 @@
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, ExecuteProcess
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch_ros.substitutions import FindPackageShare
+
+
+def generate_launch_description():
+    # ---- args ----
+    esp_port = LaunchConfiguration("esp_port")
+    esp_baud = LaunchConfiguration("esp_baud")
+    follow_side = LaunchConfiguration("follow_side")
+
+    # IMPORTANT: adjust this to your actual tof_pointcloud.py location if it differs
+    tof_script = "/home/matt/omni_bot_ws/src/Arducam_tof_camera/ros2_publisher/src/arducam/arducam_rclpy_tof_pointcloud/arducam_rclpy_tof_pointcloud/tof_pointcloud.py"
+
+    # Paths
+    omni_share = FindPackageShare("omni_bot")  # you already have package.xml so ROS can "see" it
+    ldlidar_share = FindPackageShare("ldlidar_stl_ros2")
+
+    ld19_launch = PathJoinSubstitution([ldlidar_share, "launch", "ld19.launch.py"])
+
+    # NOTE: scripts are inside your package folder at .../omni_bot/scripts/
+    wall_follower = PathJoinSubstitution([omni_share, "..", "scripts", "wall_follower.py"])
+    obstacle_guard = PathJoinSubstitution([omni_share, "..", "scripts", "ground_obstacle_guard.py"])
+    cmd_mux = PathJoinSubstitution([omni_share, "..", "scripts", "cmd_mux.py"])
+    to_esp = PathJoinSubstitution([omni_share, "..", "scripts", "cmdvel_to_esp32.py"])
+
+    return LaunchDescription([
+        DeclareLaunchArgument("esp_port", default_value="/dev/ttyUSB0"),
+        DeclareLaunchArgument("esp_baud", default_value="115200"),
+        DeclareLaunchArgument("follow_side", default_value="left"),
+
+        # --- LIDAR ---
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(ld19_launch),
+        ),
+
+        # --- ARDUCAM POINTCLOUD ---
+        ExecuteProcess(
+            cmd=["python3", tof_script],
+            output="screen"
+        ),
+
+        # --- WALL FOLLOWER ---
+        ExecuteProcess(
+            cmd=[
+                "python3", wall_follower,
+                "--ros-args",
+                "-p", "scan_topic:=/scan",
+                "-p", "cmd_topic:=/cmd_vel_raw",
+                "-p", f"follow_side:={follow_side}",
+                "-p", "desired_dist:=0.35",
+                "-p", "linear_speed:=0.20",
+            ],
+            output="screen"
+        ),
+
+        # --- DEPTH SAFETY ---
+        ExecuteProcess(
+            cmd=[
+                "python3", obstacle_guard,
+                "--ros-args",
+                "-p", "points_topic:=/point_cloud",
+                "-p", "stop_topic:=/safety/stop",
+                # ROI defaults are okay to start; tune z_min/z_max the most
+                "-p", "x_min:=0.10",
+                "-p", "x_max:=0.80",
+                "-p", "y_half:=0.25",
+                "-p", "z_min:=-0.20",
+                "-p", "z_max:=0.10",
+                "-p", "stop_dist:=0.25",
+            ],
+            output="screen"
+        ),
+
+        # --- MUX ---
+        ExecuteProcess(
+            cmd=[
+                "python3", cmd_mux,
+                "--ros-args",
+                "-p", "in_cmd:=/cmd_vel_raw",
+                "-p", "in_stop:=/safety/stop",
+                "-p", "out_cmd:=/cmd_vel_safe",
+            ],
+            output="screen"
+        ),
+
+        # --- SERIAL TO ESP32 ---
+        ExecuteProcess(
+            cmd=[
+                "python3", to_esp,
+                "--ros-args",
+                "-p", "cmd_topic:=/cmd_vel_safe",
+                "-p", f"port:={esp_port}",
+                "-p", f"baud:={esp_baud}",
+                "-p", "rate_hz:=20.0",
+                "-p", "cmd_timeout_s:=0.5",
+                "-p", "v_to_cmd:=1.0",
+                "-p", "w_to_cmd:=0.6",
+            ],
+            output="screen"
+        ),
+    ])
