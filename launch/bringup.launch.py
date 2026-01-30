@@ -88,6 +88,15 @@ def generate_launch_description():
                 "-p", "front_stop_dist:=0.45",
                 "-p", "front_slow_dist:=1.00",
                 "-p", "front_sector_half_deg:=30.0",
+
+                "-p", "linear_speed:=0.16",
+                "-p", "k_dist:=2.0",
+                "-p", "k_ang:=1.6",
+                "-p", "fit_half_deg:=22.0",
+                "-p", "w_rate_limit:=2.0",
+                "-p", "corner_slow_dist:=1.10",
+                "-p", "corner_stop_dist:=0.50",
+
             ],
             output="screen"
         ),
