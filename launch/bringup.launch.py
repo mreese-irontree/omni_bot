@@ -149,6 +149,10 @@ def generate_launch_description():
                 "-p", "cmd_timeout_s:=0.5",
                 "-p", "v_to_cmd:=1.0",
                 "-p", "w_to_cmd:=0.6",
+                "-p", "invert_w:=true",
+                "-p", "max_cmd:=0.60",
+                "-p", "slew_rate:=2.0",
+
             ],
             output="screen"
         ),

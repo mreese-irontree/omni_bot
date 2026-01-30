@@ -1,34 +1,30 @@
 #!/usr/bin/env python3
 import time
+import math
+import threading
 
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 
-try:
-    import serial  # pyserial
-except Exception:
-    serial = None
+import serial
 
 
-def clamp(x: float, lo: float, hi: float) -> float:
+def clamp(x, lo, hi):
     return max(lo, min(hi, x))
 
 
 class CmdVelToESP32(Node):
     """
-    Subscribes: /cmd_vel_safe (Twist)
+    Subscribes to geometry_msgs/Twist and sends ESP32 lines:
+      D <left_cmd> <right_cmd>
+    where left_cmd/right_cmd are floats in [-1..1].
 
-    Sends lines over serial:
-      - "D <left> <right>\n" with left/right in [-1..1]
-      - "S\n" if timeout (or shutdown)
-
-    Converts Twist using:
-      left  = v_cmd - w_cmd
-      right = v_cmd + w_cmd
-    where:
-      v_cmd = linear.x * v_to_cmd
-      w_cmd = angular.z * w_to_cmd
+    Key params to fix sign / mixing issues:
+      invert_w (bool): flip angular.z sign before mixing (default True)
+      swap_lr (bool): swap left/right after mixing
+      mix_mode (str): "diff" uses left=v-w, right=v+w (common)
+                      "diff_inv" uses left=v+w, right=v-w (if your robot wiring is opposite)
     """
 
     def __init__(self):
@@ -40,8 +36,23 @@ class CmdVelToESP32(Node):
         self.declare_parameter("rate_hz", 20.0)
         self.declare_parameter("cmd_timeout_s", 0.5)
 
-        self.declare_parameter("v_to_cmd", 1.0)  # m/s -> [-1..1]
-        self.declare_parameter("w_to_cmd", 0.6)  # rad/s -> [-1..1]
+        # Scale Twist units -> unitless motor command
+        self.declare_parameter("v_to_cmd", 1.0)
+        self.declare_parameter("w_to_cmd", 0.6)
+
+        # Safety + stability
+        self.declare_parameter("max_cmd", 0.65)          # cap magnitude sent to ESP (prevents 180° snaps)
+        self.declare_parameter("deadband", 0.04)         # ignore tiny noise
+        self.declare_parameter("slew_rate", 2.5)         # cmd units per second (limits step changes)
+
+        # Sign/mapping controls (most likely fix is invert_w=True)
+        self.declare_parameter("invert_w", True)
+        self.declare_parameter("swap_lr", False)
+        self.declare_parameter("mix_mode", "diff")       # "diff" or "diff_inv"
+
+        # Debug
+        self.declare_parameter("debug", True)
+        self.declare_parameter("debug_every_s", 1.0)
 
         self.cmd_topic = self.get_parameter("cmd_topic").value
         self.port = self.get_parameter("port").value
@@ -52,88 +63,136 @@ class CmdVelToESP32(Node):
         self.v_to_cmd = float(self.get_parameter("v_to_cmd").value)
         self.w_to_cmd = float(self.get_parameter("w_to_cmd").value)
 
+        self.max_cmd = float(self.get_parameter("max_cmd").value)
+        self.deadband = float(self.get_parameter("deadband").value)
+        self.slew_rate = float(self.get_parameter("slew_rate").value)
+
+        self.invert_w = bool(self.get_parameter("invert_w").value)
+        self.swap_lr = bool(self.get_parameter("swap_lr").value)
+        self.mix_mode = str(self.get_parameter("mix_mode").value).strip()
+
+        self.debug = bool(self.get_parameter("debug").value)
+        self.debug_every_s = float(self.get_parameter("debug_every_s").value)
+        self._last_dbg_t = 0.0
+
+        self._last_msg_time = time.time()
+        self._latest_twist = Twist()
+        self._lock = threading.Lock()
+
+        # Output command state for slew limiting
+        self._out_left = 0.0
+        self._out_right = 0.0
+        self._last_send_t = time.time()
+
+        # ROS
         self.sub = self.create_subscription(Twist, self.cmd_topic, self.on_cmd, 10)
-        self.timer = self.create_timer(1.0 / self.rate_hz, self.on_timer)
+        self.timer = self.create_timer(1.0 / max(1e-6, self.rate_hz), self.on_timer)
 
-        self.last_cmd = Twist()
-        self.last_cmd_time = time.time()
-
-        self.ser = None
-        self.last_open_attempt = 0.0
-
-        self.open_serial()
-        self.get_logger().info(f"CmdVelToESP32: cmd={self.cmd_topic} port={self.port} baud={self.baud}")
-
-    def open_serial(self):
-        if serial is None:
-            self.get_logger().error("pyserial not available. Install: sudo apt install python3-serial")
-            self.ser = None
-            return
-
-        # rate limit open attempts
-        now = time.time()
-        if (now - self.last_open_attempt) < 1.0:
-            return
-        self.last_open_attempt = now
-
-        try:
-            self.ser = serial.Serial(self.port, self.baud, timeout=0.0)
-            self.ser.reset_input_buffer()
-            self.ser.reset_output_buffer()
-            self.get_logger().info(f"Opened serial: {self.port} @ {self.baud}")
-        except Exception as e:
-            self.ser = None
-            self.get_logger().error(f"Failed to open serial {self.port}: {e}")
+        # Serial
+        self.ser = serial.Serial(self.port, self.baud, timeout=0.05)
+        self.get_logger().info(f"Opened serial: {self.port} @ {self.baud}")
+        self.get_logger().info(
+            f"CmdVelToESP32: cmd={self.cmd_topic} invert_w={self.invert_w} swap_lr={self.swap_lr} mix_mode={self.mix_mode} "
+            f"max_cmd={self.max_cmd} deadband={self.deadband} slew_rate={self.slew_rate}"
+        )
 
     def on_cmd(self, msg: Twist):
-        self.last_cmd = msg
-        self.last_cmd_time = time.time()
+        with self._lock:
+            self._latest_twist = msg
+            self._last_msg_time = time.time()
 
-    def send_stop(self):
-        if self.ser is None:
-            return
-        try:
-            self.ser.write(b"S\n")
-        except Exception:
-            pass
+    def apply_deadband(self, x: float) -> float:
+        return 0.0 if abs(x) < self.deadband else x
 
-    def on_timer(self):
-        if self.ser is None:
-            self.open_serial()
-            return
+    def slew(self, current: float, target: float, dt: float) -> float:
+        max_step = self.slew_rate * dt
+        return clamp(target, current - max_step, current + max_step)
 
-        if (time.time() - self.last_cmd_time) > self.cmd_timeout_s:
-            self.send_stop()
-            return
+    def mix(self, v_cmd: float, w_cmd: float):
+        # Base mixing
+        if self.mix_mode == "diff":
+            left = v_cmd - w_cmd
+            right = v_cmd + w_cmd
+        elif self.mix_mode == "diff_inv":
+            left = v_cmd + w_cmd
+            right = v_cmd - w_cmd
+        else:
+            # fallback
+            left = v_cmd - w_cmd
+            right = v_cmd + w_cmd
 
-        v = float(self.last_cmd.linear.x)
-        w = float(self.last_cmd.angular.z)
+        if self.swap_lr:
+            left, right = right, left
 
-        v_cmd = clamp(v * self.v_to_cmd, -1.0, 1.0)
-        w_cmd = clamp(w * self.w_to_cmd, -1.0, 1.0)
+        # Normalize if either exceeds 1
+        m = max(1.0, abs(left), abs(right))
+        left /= m
+        right /= m
 
-        left = clamp(v_cmd - w_cmd, -1.0, 1.0)
-        right = clamp(v_cmd + w_cmd, -1.0, 1.0)
+        return left, right
 
+    def send_drive(self, left: float, right: float):
         line = f"D {left:.3f} {right:.3f}\n"
         try:
             self.ser.write(line.encode("utf-8"))
         except Exception as e:
-            self.get_logger().error(f"Serial write failed ({self.port}): {e}")
-            try:
-                self.ser.close()
-            except Exception:
-                pass
-            self.ser = None
+            self.get_logger().error(f"Serial write failed: {e}")
 
-    def destroy_node(self):
+    def send_stop(self):
         try:
-            self.send_stop()
-            if self.ser:
-                self.ser.close()
-        except Exception:
-            pass
-        super().destroy_node()
+            self.ser.write(b"S\n")
+        except Exception as e:
+            self.get_logger().error(f"Serial write failed: {e}")
+
+    def on_timer(self):
+        now = time.time()
+        dt = max(1e-3, now - self._last_send_t)
+        self._last_send_t = now
+
+        # Timeout safety
+        if (now - self._last_msg_time) > self.cmd_timeout_s:
+            self._out_left = self.slew(self._out_left, 0.0, dt)
+            self._out_right = self.slew(self._out_right, 0.0, dt)
+            if abs(self._out_left) < 1e-3 and abs(self._out_right) < 1e-3:
+                self.send_stop()
+            else:
+                self.send_drive(self._out_left, self._out_right)
+            return
+
+        with self._lock:
+            tw = self._latest_twist
+
+        # Convert Twist -> unitless
+        v = float(tw.linear.x) * self.v_to_cmd
+        w = float(tw.angular.z) * self.w_to_cmd
+
+        # Most common “it turns the wrong way” fix:
+        if self.invert_w:
+            w = -w
+
+        v = self.apply_deadband(v)
+        w = self.apply_deadband(w)
+
+        # Mix
+        left_t, right_t = self.mix(v, w)
+
+        # Clamp overall command to avoid instant pivots
+        left_t = clamp(left_t, -self.max_cmd, self.max_cmd)
+        right_t = clamp(right_t, -self.max_cmd, self.max_cmd)
+
+        # Slew limit
+        self._out_left = self.slew(self._out_left, left_t, dt)
+        self._out_right = self.slew(self._out_right, right_t, dt)
+
+        self.send_drive(self._out_left, self._out_right)
+
+        if self.debug and (now - self._last_dbg_t) > self.debug_every_s:
+            self._last_dbg_t = now
+            self.get_logger().info(
+                f"twist v={tw.linear.x:+.2f} w={tw.angular.z:+.2f} -> "
+                f"v_cmd={v:+.2f} w_cmd={w:+.2f} -> "
+                f"LR={self._out_left:+.2f},{self._out_right:+.2f}"
+            )
 
 
 def main():
@@ -142,6 +201,10 @@ def main():
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
+        pass
+    try:
+        node.send_stop()
+    except Exception:
         pass
     node.destroy_node()
     rclpy.shutdown()
