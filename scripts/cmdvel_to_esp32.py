@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import time
-import math
 
 import rclpy
 from rclpy.node import Node
@@ -8,7 +7,7 @@ from geometry_msgs.msg import Twist
 
 try:
     import serial  # pyserial
-except Exception as e:
+except Exception:
     serial = None
 
 
@@ -19,8 +18,17 @@ def clamp(x: float, lo: float, hi: float) -> float:
 class CmdVelToESP32(Node):
     """
     Subscribes: /cmd_vel_safe (Twist)
-    Sends: "D <left> <right>\n" at rate_hz
-           "S\n" on timeout/shutdown
+
+    Sends lines over serial:
+      - "D <left> <right>\n" with left/right in [-1..1]
+      - "S\n" if timeout (or shutdown)
+
+    Converts Twist using:
+      left  = v_cmd - w_cmd
+      right = v_cmd + w_cmd
+    where:
+      v_cmd = linear.x * v_to_cmd
+      w_cmd = angular.z * w_to_cmd
     """
 
     def __init__(self):
@@ -32,15 +40,15 @@ class CmdVelToESP32(Node):
         self.declare_parameter("rate_hz", 20.0)
         self.declare_parameter("cmd_timeout_s", 0.5)
 
-        # Convert Twist -> motor command [-1..1]
-        self.declare_parameter("v_to_cmd", 1.0)  # m/s -> cmd
-        self.declare_parameter("w_to_cmd", 0.6)  # rad/s -> cmd
+        self.declare_parameter("v_to_cmd", 1.0)  # m/s -> [-1..1]
+        self.declare_parameter("w_to_cmd", 0.6)  # rad/s -> [-1..1]
 
         self.cmd_topic = self.get_parameter("cmd_topic").value
         self.port = self.get_parameter("port").value
         self.baud = int(self.get_parameter("baud").value)
         self.rate_hz = float(self.get_parameter("rate_hz").value)
         self.cmd_timeout_s = float(self.get_parameter("cmd_timeout_s").value)
+
         self.v_to_cmd = float(self.get_parameter("v_to_cmd").value)
         self.w_to_cmd = float(self.get_parameter("w_to_cmd").value)
 
@@ -51,8 +59,9 @@ class CmdVelToESP32(Node):
         self.last_cmd_time = time.time()
 
         self.ser = None
-        self.open_serial()
+        self.last_open_attempt = 0.0
 
+        self.open_serial()
         self.get_logger().info(f"CmdVelToESP32: cmd={self.cmd_topic} port={self.port} baud={self.baud}")
 
     def open_serial(self):
@@ -60,13 +69,21 @@ class CmdVelToESP32(Node):
             self.get_logger().error("pyserial not available. Install: sudo apt install python3-serial")
             self.ser = None
             return
+
+        # rate limit open attempts
+        now = time.time()
+        if (now - self.last_open_attempt) < 1.0:
+            return
+        self.last_open_attempt = now
+
         try:
             self.ser = serial.Serial(self.port, self.baud, timeout=0.0)
             self.ser.reset_input_buffer()
             self.ser.reset_output_buffer()
+            self.get_logger().info(f"Opened serial: {self.port} @ {self.baud}")
         except Exception as e:
-            self.get_logger().error(f"Failed to open serial {self.port}: {e}")
             self.ser = None
+            self.get_logger().error(f"Failed to open serial {self.port}: {e}")
 
     def on_cmd(self, msg: Twist):
         self.last_cmd = msg
@@ -102,7 +119,7 @@ class CmdVelToESP32(Node):
         try:
             self.ser.write(line.encode("utf-8"))
         except Exception as e:
-            self.get_logger().error(f"Serial write failed: {e}")
+            self.get_logger().error(f"Serial write failed ({self.port}): {e}")
             try:
                 self.ser.close()
             except Exception:

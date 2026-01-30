@@ -14,8 +14,11 @@ class GroundObstacleGuard(Node):
     Subscribes: /point_cloud (PointCloud2)
     Publishes:  /safety/stop (Bool)
 
-    Looks for any points in a "low obstacle" box ahead of the robot in the camera frame.
-    Tune z_min/z_max heavily depending on camera tilt and frame convention.
+    Checks for ANY points inside an ROI box (in the point cloud frame).
+    If any are closer than stop_dist -> stop True for hold_stop_ms.
+
+    Note:
+      The most common tuning needed is z_min/z_max based on your camera frame.
     """
 
     def __init__(self):
@@ -24,20 +27,22 @@ class GroundObstacleGuard(Node):
         self.declare_parameter("points_topic", "/point_cloud")
         self.declare_parameter("stop_topic", "/safety/stop")
 
-        # ROI box in the pointcloud frame
+        # ROI box in the point cloud frame
         self.declare_parameter("x_min", 0.10)
         self.declare_parameter("x_max", 0.80)
         self.declare_parameter("y_half", 0.25)
         self.declare_parameter("z_min", -0.20)
         self.declare_parameter("z_max", 0.10)
 
-        # decision thresholds
+        # Decision thresholds
         self.declare_parameter("stop_dist", 0.25)
         self.declare_parameter("hold_stop_ms", 400)
 
+        # Performance controls
         self.declare_parameter("publish_rate_hz", 20.0)
         self.declare_parameter("decimation", 8)
 
+        # --- read params ---
         self.points_topic = self.get_parameter("points_topic").value
         self.stop_topic = self.get_parameter("stop_topic").value
 
@@ -53,12 +58,14 @@ class GroundObstacleGuard(Node):
         self.publish_rate_hz = float(self.get_parameter("publish_rate_hz").value)
         self.decimation = int(self.get_parameter("decimation").value)
 
+        # --- ROS ---
         self.pub = self.create_publisher(Bool, self.stop_topic, 10)
         self.sub = self.create_subscription(PointCloud2, self.points_topic, self.on_points, 10)
+        self.timer = self.create_timer(1.0 / self.publish_rate_hz, self.on_timer)
 
+        # --- state ---
         self.stop_until = 0.0
         self.latest_stop = False
-        self.timer = self.create_timer(1.0 / self.publish_rate_hz, self.on_timer)
 
         self.get_logger().info(
             f"GroundObstacleGuard: points={self.points_topic} stop={self.stop_topic} "
@@ -80,7 +87,9 @@ class GroundObstacleGuard(Node):
             if (i % decim) != 0:
                 continue
 
-            x = float(x); y = float(y); z = float(z)
+            x = float(x)
+            y = float(y)
+            z = float(z)
 
             if x < self.x_min or x > self.x_max:
                 continue
@@ -89,7 +98,7 @@ class GroundObstacleGuard(Node):
             if z < self.z_min or z > self.z_max:
                 continue
 
-            d = math.sqrt(x*x + y*y + z*z)
+            d = math.sqrt(x * x + y * y + z * z)
             if d < self.stop_dist:
                 found = True
                 break

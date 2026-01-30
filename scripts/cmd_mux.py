@@ -12,6 +12,8 @@ class CmdMux(Node):
       /safety/stop (Bool)
     Publishes:
       /cmd_vel_safe (Twist)
+
+    If stop=True, outputs zero Twist.
     """
 
     def __init__(self):
