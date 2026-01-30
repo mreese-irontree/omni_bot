@@ -56,7 +56,7 @@ def generate_launch_description():
             'python3', esp32_bridge_script,
             '--ros-args',
             '-p', 'cmd_vel_topic:=/cmd_vel',
-            '-p', 'port:=/dev/ttyUSB0',
+            '-p', 'port:=/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0',
             '-p', 'baud:=115200',
             '-p', 'wheel_separation_m:=0.30',
             '-p', 'max_linear_mps:=0.6',
