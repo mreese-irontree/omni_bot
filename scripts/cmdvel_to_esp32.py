@@ -6,7 +6,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 
 try:
-    import serial # pyserial
+    import serial  # pyserial
 except Exception:
     serial = None
 
@@ -20,15 +20,15 @@ class CmdVelToESP32(Node):
     Subscribes: /cmd_vel_safe (Twist)
 
     Sends lines over serial:
-    - "D <left> <right>\n" with left/right in [-1..1]
-    - "S\n" if timeout (or shutdown)
+      - "D <left> <right>\\n" with left/right in [-1..1]
+      - "S\\n" if timeout (or shutdown)
 
     Converts Twist using:
-    left = v_cmd - w_cmd
-    right = v_cmd + w_cmd
+      left  = v_cmd - w_cmd
+      right = v_cmd + w_cmd
     where:
-    v_cmd = linear.x * v_to_cmd
-    w_cmd = angular.z * w_to_cmd
+      v_cmd = linear.x * v_to_cmd
+      w_cmd = angular.z * w_to_cmd
     """
 
     def __init__(self):
@@ -40,8 +40,8 @@ class CmdVelToESP32(Node):
         self.declare_parameter("rate_hz", 20.0)
         self.declare_parameter("cmd_timeout_s", 0.5)
 
-        self.declare_parameter("v_to_cmd", 1.0) # m/s -> [-1..1]
-        self.declare_parameter("w_to_cmd", 0.6) # rad/s -> [-1..1]
+        self.declare_parameter("v_to_cmd", 1.0)  # m/s -> [-1..1]
+        self.declare_parameter("w_to_cmd", 0.6)  # rad/s -> [-1..1]
 
         self.cmd_topic = self.get_parameter("cmd_topic").value
         self.port = self.get_parameter("port").value
@@ -70,7 +70,6 @@ class CmdVelToESP32(Node):
             self.ser = None
             return
 
-        # rate limit open attempts
         now = time.time()
         if (now - self.last_open_attempt) < 1.0:
             return
@@ -136,16 +135,16 @@ class CmdVelToESP32(Node):
         super().destroy_node()
 
 
-    def main():
-        rclpy.init()
-        node = CmdVelToESP32()
-        try:
-            rclpy.spin(node)
-        except KeyboardInterrupt:
-            pass
-        node.destroy_node()
-        rclpy.shutdown()
+def main():
+    rclpy.init()
+    node = CmdVelToESP32()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    node.destroy_node()
+    rclpy.shutdown()
 
 
-    if __name__ == "__main__":
-        main()
+if __name__ == "__main__":
+    main()
