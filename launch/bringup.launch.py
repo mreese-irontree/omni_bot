@@ -10,6 +10,7 @@ def generate_launch_description():
     esp_baud = LaunchConfiguration("esp_baud")
     lidar_port = LaunchConfiguration("lidar_port")
     follow_side = LaunchConfiguration("follow_side")
+    scan_yaw_offset_deg = LaunchConfiguration("scan_yaw_offset_deg")
     invert_turn = LaunchConfiguration("invert_turn")
 
     omni_repo = "/home/matt/omni_bot_ws/src/omni_bot"
@@ -27,16 +28,20 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "lidar_port",
             default_value="/dev/serial/by-path/platform-fd500000.pcie-pci-0000:01:00.0-usb-0:1.1:1.0-port0",
-            description="LD19 LiDAR serial port (stable by-path)"
         ),
         DeclareLaunchArgument(
             "esp_port",
             default_value="/dev/serial/by-path/platform-fd500000.pcie-pci-0000:01:00.0-usb-0:1.2:1.0-port0",
-            description="ESP32 motor controller serial port (stable by-path)"
         ),
         DeclareLaunchArgument("esp_baud", default_value="115200"),
         DeclareLaunchArgument("follow_side", default_value="left"),
-        DeclareLaunchArgument("invert_turn", default_value="true"),
+
+        # If your /scan 0deg is not robot forward, change this.
+        # You’ve been using -90; keep that as default.
+        DeclareLaunchArgument("scan_yaw_offset_deg", default_value="-90.0"),
+
+        # Start with False. Your earlier logs suggest your turn direction was flipped.
+        DeclareLaunchArgument("invert_turn", default_value="false"),
 
         Node(
             package="robot_state_publisher",
@@ -53,6 +58,7 @@ def generate_launch_description():
             output="screen",
         ),
 
+        # LD19 LiDAR
         Node(
             package="ldlidar_stl_ros2",
             executable="ldlidar_stl_ros2_node",
@@ -69,6 +75,7 @@ def generate_launch_description():
             }],
         ),
 
+        # Wall follower (LIDAR only)
         ExecuteProcess(
             cmd=[
                 "python3", wall_follower,
@@ -76,33 +83,25 @@ def generate_launch_description():
                 "-p", "scan_topic:=/scan",
                 "-p", "cmd_topic:=/cmd_vel_raw",
                 "-p", ["follow_side:=", follow_side],
-                "-p", "scan_yaw_offset_deg:=-90.0",
+                "-p", ["scan_yaw_offset_deg:=", scan_yaw_offset_deg],
                 "-p", ["invert_turn:=", invert_turn],
 
                 "-p", "desired_dist:=0.35",
+                "-p", "lookahead:=0.45",
+                "-p", "k_dist:=2.2",
+                "-p", "k_ang:=1.2",
+                "-p", "w_max:=1.0",
+
                 "-p", "v_nom:=0.14",
                 "-p", "v_min:=0.05",
-                "-p", "w_max:=1.1",
 
-                "-p", "side_deg:=90.0",
-                "-p", "fwd_side_deg:=50.0",
-                "-p", "window_half_deg:=6.0",
-
-                "-p", "k_dist:=1.6",
-                "-p", "k_ang:=1.0",
-
-                "-p", "far_dist:=0.65",
-                "-p", "far_speed:=0.08",
-                "-p", "far_turn:=0.60",
-
-                "-p", "front_half_deg:=28.0",
-                "-p", "front_stop:=0.32",
+                "-p", "front_half_deg:=25.0",
+                "-p", "front_stop:=0.30",
                 "-p", "front_slow:=0.85",
 
-                "-p", "wall_hold_s:=0.40",
-                "-p", "wall_filter_tau:=0.25",
                 "-p", "cmd_smooth_tau:=0.25",
                 "-p", "w_deadband:=0.06",
+                "-p", "wall_hold_s:=0.40",
 
                 "-p", "publish_rate_hz:=20.0",
                 "-p", "debug_every_s:=0.5",
@@ -110,7 +109,7 @@ def generate_launch_description():
             output="screen",
         ),
 
-        # Cmd mux: stop disabled cleanly
+        # Cmd mux (stop disabled)
         ExecuteProcess(
             cmd=[
                 "python3", cmd_mux,
@@ -123,6 +122,7 @@ def generate_launch_description():
             output="screen",
         ),
 
+        # Serial to ESP32
         ExecuteProcess(
             cmd=[
                 "python3", cmd_to_esp,

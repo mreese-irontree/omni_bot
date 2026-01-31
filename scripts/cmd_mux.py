@@ -7,31 +7,27 @@ from geometry_msgs.msg import Twist
 from std_msgs.msg import Bool
 
 
-def _stop_disabled(value: str) -> bool:
-    v = (value or "").strip().lower()
-    return v in ("", "none", "off", "false", "0", "disabled", "null")
+def _disabled(v: str) -> bool:
+    s = (v or "").strip().lower()
+    return s in ("", "none", "off", "false", "0", "disabled", "null")
 
 
 class CmdMux(Node):
     """
-    Publishes out_cmd. Normally passes in_cmd through.
+    Pass-through cmd mux with optional stop topic.
 
-    Optional stop input:
-      - If in_stop is set to a topic name (std_msgs/Bool), then:
-          True  -> publish zero Twist (stop)
-          False -> pass cmd
-      - If stop topic becomes stale -> stop (fail-safe)
-      - If in_stop is "none"/"off"/"" -> stop input disabled (pure pass-through)
+    If in_stop is "none"/"off"/"" -> stop input disabled (pure pass-through).
+    If enabled, stale stop topic fails-safe to STOP.
     """
 
     def __init__(self):
         super().__init__("cmd_mux")
 
         self.declare_parameter("in_cmd", "/cmd_vel_raw")
-        self.declare_parameter("in_stop", "none")  # "none" disables stop input
+        self.declare_parameter("in_stop", "none")
         self.declare_parameter("out_cmd", "/cmd_vel_safe")
         self.declare_parameter("publish_rate_hz", 20.0)
-        self.declare_parameter("stop_timeout_s", 0.6)  # fail-safe timeout for stop topic
+        self.declare_parameter("stop_timeout_s", 0.6)
 
         self.in_cmd = str(self.get_parameter("in_cmd").value)
         self.in_stop = str(self.get_parameter("in_stop").value)
@@ -42,7 +38,7 @@ class CmdMux(Node):
         self.pub = self.create_publisher(Twist, self.out_cmd, 10)
         self.sub_cmd = self.create_subscription(Twist, self.in_cmd, self.on_cmd, 10)
 
-        self.stop_enabled = not _stop_disabled(self.in_stop)
+        self.stop_enabled = not _disabled(self.in_stop)
         self.stop_active = False
         self.last_stop_time = 0.0
 
@@ -64,19 +60,13 @@ class CmdMux(Node):
         self.last_stop_time = time.time()
 
     def on_timer(self):
-        out = Twist()
-
         if self.stop_enabled:
-            # Active stop -> stop
             if self.stop_active:
-                self.pub.publish(out)
+                self.pub.publish(Twist())
                 return
-            # Stale stop topic -> stop (fail-safe)
             if (time.time() - self.last_stop_time) > self.stop_timeout_s:
-                self.pub.publish(out)
+                self.pub.publish(Twist())
                 return
-
-        # Pass-through
         self.pub.publish(self.latest_cmd)
 
 
