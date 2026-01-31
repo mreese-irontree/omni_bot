@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import time
-
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
@@ -25,22 +24,19 @@ class CmdVelToESP32(Node):
         self.declare_parameter("rate_hz", 20.0)
         self.declare_parameter("cmd_timeout_s", 0.5)
 
-        self.declare_parameter("v_to_cmd", 1.0)  # m/s -> [-1..1]
-        self.declare_parameter("w_to_cmd", 0.8)  # rad/s -> [-1..1]
-        self.declare_parameter("max_cmd", 1.0)
+        self.declare_parameter("v_to_cmd", 1.0)   # m/s -> [-1..1]
+        self.declare_parameter("w_to_cmd", 0.75)  # rad/s -> [-1..1]
 
         self.cmd_topic = str(self.get_parameter("cmd_topic").value)
         self.port = str(self.get_parameter("port").value)
         self.baud = int(self.get_parameter("baud").value)
         self.rate_hz = float(self.get_parameter("rate_hz").value)
         self.cmd_timeout_s = float(self.get_parameter("cmd_timeout_s").value)
-
         self.v_to_cmd = float(self.get_parameter("v_to_cmd").value)
         self.w_to_cmd = float(self.get_parameter("w_to_cmd").value)
-        self.max_cmd = float(self.get_parameter("max_cmd").value)
 
         self.sub = self.create_subscription(Twist, self.cmd_topic, self.on_cmd, 10)
-        self.timer = self.create_timer(1.0 / max(1.0, self.rate_hz), self.on_timer)
+        self.timer = self.create_timer(1.0 / self.rate_hz, self.on_timer)
 
         self.last_cmd = Twist()
         self.last_cmd_time = time.time()
@@ -95,11 +91,12 @@ class CmdVelToESP32(Node):
         v = float(self.last_cmd.linear.x)
         w = float(self.last_cmd.angular.z)
 
-        v_cmd = clamp(v * self.v_to_cmd, -self.max_cmd, self.max_cmd)
-        w_cmd = clamp(w * self.w_to_cmd, -self.max_cmd, self.max_cmd)
+        v_cmd = clamp(v * self.v_to_cmd, -1.0, 1.0)
+        w_cmd = clamp(w * self.w_to_cmd, -1.0, 1.0)
 
-        left = clamp(v_cmd - w_cmd, -self.max_cmd, self.max_cmd)
-        right = clamp(v_cmd + w_cmd, -self.max_cmd, self.max_cmd)
+        # skid mix (ROS standard: +w = CCW/left turn)
+        left = clamp(v_cmd - w_cmd, -1.0, 1.0)
+        right = clamp(v_cmd + w_cmd, -1.0, 1.0)
 
         line = f"D {left:.3f} {right:.3f}\n"
         try:
