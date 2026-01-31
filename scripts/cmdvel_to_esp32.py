@@ -15,33 +15,23 @@ def clamp(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
 
 
+def apply_deadband(x: float, db: float) -> float:
+    return 0.0 if abs(x) < db else x
+
+
 class CmdVelToESP32(Node):
-    """
-    Subscribes: /cmd_vel_safe (Twist)
-
-    Sends lines over serial:
-      - "D <left> <right>\\n" with left/right in [-1..1]
-      - "S\\n" if timeout (or shutdown)
-
-    Converts Twist using:
-      left  = v_cmd - w_cmd
-      right = v_cmd + w_cmd
-    where:
-      v_cmd = linear.x * v_to_cmd
-      w_cmd = angular.z * w_to_cmd
-    """
-
     def __init__(self):
         super().__init__("cmdvel_to_esp32")
 
-        self.declare_parameter("cmd_topic", "/cmd_vel_safe")
+        self.declare_parameter("cmd_topic", "/cmd_vel")
         self.declare_parameter("port", "/dev/ttyUSB0")
         self.declare_parameter("baud", 115200)
         self.declare_parameter("rate_hz", 20.0)
-        self.declare_parameter("cmd_timeout_s", 0.5)
+        self.declare_parameter("cmd_timeout_s", 0.6)
 
-        self.declare_parameter("v_to_cmd", 1.0)  # m/s -> [-1..1]
-        self.declare_parameter("w_to_cmd", 0.6)  # rad/s -> [-1..1]
+        self.declare_parameter("v_to_cmd", 1.0)
+        self.declare_parameter("w_to_cmd", 0.7)
+        self.declare_parameter("deadband", 0.03)
 
         self.cmd_topic = self.get_parameter("cmd_topic").value
         self.port = self.get_parameter("port").value
@@ -51,6 +41,7 @@ class CmdVelToESP32(Node):
 
         self.v_to_cmd = float(self.get_parameter("v_to_cmd").value)
         self.w_to_cmd = float(self.get_parameter("w_to_cmd").value)
+        self.deadband = float(self.get_parameter("deadband").value)
 
         self.sub = self.create_subscription(Twist, self.cmd_topic, self.on_cmd, 10)
         self.timer = self.create_timer(1.0 / self.rate_hz, self.on_timer)
@@ -108,8 +99,13 @@ class CmdVelToESP32(Node):
         v = float(self.last_cmd.linear.x)
         w = float(self.last_cmd.angular.z)
 
+        # scale and clamp
         v_cmd = clamp(v * self.v_to_cmd, -1.0, 1.0)
         w_cmd = clamp(w * self.w_to_cmd, -1.0, 1.0)
+
+        # deadband to stop constant micro-turning
+        v_cmd = apply_deadband(v_cmd, self.deadband)
+        w_cmd = apply_deadband(w_cmd, self.deadband)
 
         left = clamp(v_cmd - w_cmd, -1.0, 1.0)
         right = clamp(v_cmd + w_cmd, -1.0, 1.0)
