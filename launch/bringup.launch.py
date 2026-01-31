@@ -87,27 +87,35 @@ def generate_launch_description():
                 "-p", ["invert_turn:=", invert_turn],
 
                 "-p", "desired_dist:=0.35",
-                "-p", "lookahead:=0.45",
-                "-p", "k_dist:=2.2",
-                "-p", "k_ang:=1.2",
-                "-p", "w_max:=1.0",
+                "-p", "lookahead:=0.25",
+                "-p", "k_dist:=1.4",
+                "-p", "k_ang:=0.6",
+                "-p", "w_max:=0.55",
 
-                "-p", "v_nom:=0.14",
-                "-p", "v_min:=0.05",
+                "-p", "side_deg:=90.0",
+                "-p", "fwd_side_deg:=75.0",
+                "-p", "window_half_deg:=9.0",
+
+                "-p", "alpha_max_deg:=50.0",
+                "-p", "alpha_smooth_tau:=0.35",
+
+                "-p", "v_nom:=0.16",
+                "-p", "v_min:=0.07",
+                "-p", "turn_slow_strength:=0.65",
 
                 "-p", "front_half_deg:=25.0",
                 "-p", "front_stop:=0.30",
-                "-p", "front_slow:=0.85",
+                "-p", "front_slow:=0.90",
 
-                "-p", "cmd_smooth_tau:=0.25",
-                "-p", "w_deadband:=0.06",
-                "-p", "wall_hold_s:=0.40",
+                "-p", "cmd_smooth_tau:=0.30",
+                "-p", "w_deadband:=0.04",
 
                 "-p", "publish_rate_hz:=20.0",
                 "-p", "debug_every_s:=0.5",
             ],
             output="screen",
         ),
+
 
         # Cmd mux (stop disabled)
         ExecuteProcess(
