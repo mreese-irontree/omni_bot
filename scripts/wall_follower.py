@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 import math
-import time
-import random
-from dataclasses import dataclass
-from typing import Optional, Tuple, List
+from typing import Optional, List
 
 import rclpy
 from rclpy.node import Node
@@ -15,132 +12,34 @@ def clamp(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
 
 
-def wrap_pi(a: float) -> float:
-    while a > math.pi:
-        a -= 2.0 * math.pi
-    while a < -math.pi:
-        a += 2.0 * math.pi
-    return a
+def wrap_deg_0_360(deg: float) -> float:
+    d = deg % 360.0
+    if d < 0.0:
+        d += 360.0
+    return d
 
 
 def is_valid(scan: LaserScan, r: float) -> bool:
     return math.isfinite(r) and (scan.range_min <= r <= scan.range_max)
 
 
-def deg_to_scan_rad(scan: LaserScan, deg_scan_0_360: float) -> float:
-    """
-    scan rad angle corresponding to a given 0..360 deg in scan frame.
-
-    If scan angle_min is negative (e.g. -pi..pi), we map 0..360 -> -180..180.
-    If scan angle_min is >= 0 (e.g. 0..2pi), keep 0..360.
-    """
-    d = deg_scan_0_360 % 360.0
-    if scan.angle_min < 0.0:
-        if d > 180.0:
-            d -= 360.0
-    return math.radians(d)
-
-
-def get_range_at_deg_robot(scan: LaserScan, deg_robot: float, scan_yaw_offset_deg: float) -> Optional[float]:
-    """
-    deg_robot: 0=forward, +CCW left
-    scan_yaw_offset_deg: rotate robot angles into scan angles.
-    """
-    deg_scan = (deg_robot + scan_yaw_offset_deg) % 360.0
-    ang = deg_to_scan_rad(scan, deg_scan)
-    if scan.angle_increment == 0.0:
-        return None
-    idx = int(round((ang - scan.angle_min) / scan.angle_increment))
-    if idx < 0 or idx >= len(scan.ranges):
-        return None
-    r = float(scan.ranges[idx])
-    if not is_valid(scan, r):
-        return None
-    return r
-
-
-def robust_min_in_sector(scan: LaserScan, center_deg_robot: float, half_deg: float, scan_yaw_offset_deg: float) -> Optional[float]:
-    vals: List[float] = []
-    d = center_deg_robot - half_deg
-    while d <= center_deg_robot + half_deg:
-        r = get_range_at_deg_robot(scan, d, scan_yaw_offset_deg)
-        if r is not None:
-            vals.append(r)
-        d += 1.0
-    if not vals:
-        return None
-    vals.sort()
-    # 20th percentile -> avoids single-ray spikes
-    k = max(0, int(0.2 * (len(vals) - 1)))
-    return vals[k]
-
-
-@dataclass
-class LineModel:
-    a: float
-    b: float
-    c: float
-    inliers: int
-
-
-def fit_line_ransac(points: List[Tuple[float, float]],
-                    iters: int,
-                    thresh: float,
-                    min_inliers: int) -> Optional[LineModel]:
-    """
-    Line in ax + by + c = 0 with normalized sqrt(a^2+b^2)=1
-    RANSAC by sampling 2 points.
-    """
-    if len(points) < 2:
-        return None
-
-    best: Optional[LineModel] = None
-
-    for _ in range(max(1, iters)):
-        p1 = random.choice(points)
-        p2 = random.choice(points)
-        if p1 == p2:
-            continue
-
-        x1, y1 = p1
-        x2, y2 = p2
-        dx = x2 - x1
-        dy = y2 - y1
-        if abs(dx) < 1e-6 and abs(dy) < 1e-6:
-            continue
-
-        # line through p1,p2: normal = (dy, -dx)
-        a = dy
-        b = -dx
-        norm = math.hypot(a, b)
-        if norm < 1e-9:
-            continue
-        a /= norm
-        b /= norm
-        c = -(a * x1 + b * y1)
-
-        inl = 0
-        for (x, y) in points:
-            dist = abs(a * x + b * y + c)  # since normalized
-            if dist <= thresh:
-                inl += 1
-
-        if best is None or inl > best.inliers:
-            best = LineModel(a=a, b=b, c=c, inliers=inl)
-
-    if best is None or best.inliers < min_inliers:
-        return None
-
-    return best
-
-
 class WallFollower(Node):
     """
-    Lidar-only wall follower using:
-      - Sector point extraction
-      - RANSAC line fit -> wall distance + wall heading
-      - State machine to avoid dithering at corners
-      - Smooth angular output (low-pass + slew limit)
+    Stable wall follower (no encoders required).
+
+    Key idea:
+      - Use TWO rays on follow side: theta=90deg and theta=60deg (or symmetric on right)
+      - Compute wall angle alpha and predicted distance d_pred at lookahead L.
+      - Control uses d_pred error and alpha heading error.
+      - Includes filtering, hysteresis, and safe seek (no spin-in-place).
+
+    Works with scan published as either:
+      - angle_min ~ 0, angle_max ~ 2*pi (LD19 typical)
+      - angle_min ~ -pi, angle_max ~ +pi
+
+    scan_yaw_offset_deg:
+      Rotate the scan so robot-forward is 0 deg.
+      You’ve been using -90.0 which is plausible for your mounting.
     """
 
     def __init__(self):
@@ -150,301 +49,320 @@ class WallFollower(Node):
         self.declare_parameter("scan_topic", "/scan")
         self.declare_parameter("cmd_topic", "/cmd_vel_raw")
 
-        # Side
-        self.declare_parameter("follow_side", "left")  # left/right
+        # Behavior
+        self.declare_parameter("follow_side", "left")     # left or right
         self.declare_parameter("scan_yaw_offset_deg", -90.0)
 
-        # Speed & limits
-        self.declare_parameter("desired_dist", 0.35)
-        self.declare_parameter("v_nominal", 0.14)
-        self.declare_parameter("v_min", 0.06)
+        # Desired wall distance & lookahead
+        self.declare_parameter("desired_dist", 0.35)      # meters
+        self.declare_parameter("lookahead", 0.45)         # meters ahead projection
+
+        # Speeds
+        self.declare_parameter("v_nom", 0.12)             # nominal forward speed (m/s)
+        self.declare_parameter("v_min", 0.05)
         self.declare_parameter("v_max", 0.18)
-        self.declare_parameter("w_max", 1.0)
 
-        # Front safety
-        self.declare_parameter("front_sector_half_deg", 18.0)
-        self.declare_parameter("front_stop_dist", 0.35)
-        self.declare_parameter("front_slow_dist", 0.80)
+        self.declare_parameter("w_max", 0.9)              # rad/s limit (keep under 1.0)
+        self.declare_parameter("w_deadband", 0.06)        # ignore tiny steering commands
 
-        # Wall sector (robot frame degrees, 0 forward, + left)
-        self.declare_parameter("side_sector_center_deg", 90.0)
-        self.declare_parameter("side_sector_half_deg", 35.0)
+        # Control gains (start conservative)
+        self.declare_parameter("k_dist", 1.8)             # distance error -> turn
+        self.declare_parameter("k_alpha", 1.1)            # wall angle -> turn
 
-        # RANSAC
-        self.declare_parameter("ransac_iters", 60)
-        self.declare_parameter("ransac_thresh", 0.03)
-        self.declare_parameter("min_inliers", 35)
+        # Ray angles (deg) on the follow side
+        self.declare_parameter("theta_far_deg", 60.0)     # "ahead-side" ray
+        self.declare_parameter("theta_near_deg", 90.0)    # true side ray
+        self.declare_parameter("ray_window_deg", 6.0)     # median window half-width
 
-        # Controller gains
-        self.declare_parameter("k_dist", 2.2)
-        self.declare_parameter("k_head", 1.6)
+        # Front safety (optional but very useful for corners)
+        self.declare_parameter("front_half_deg", 20.0)
+        self.declare_parameter("front_stop", 0.28)
+        self.declare_parameter("front_slow", 0.70)
 
-        # Smoothing
-        self.declare_parameter("w_slew_rate", 2.5)       # rad/s per second
-        self.declare_parameter("w_lowpass_alpha", 0.35)  # 0..1 (higher = less smoothing)
+        # Wall reacquire behavior (NO spinning)
+        self.declare_parameter("seek_turn", 0.35)         # gentle turn toward wall side
+        self.declare_parameter("seek_v", 0.08)            # still moves forward while seeking
+        self.declare_parameter("wall_lost_dist", 2.0)     # if side reading above this => wall lost
+        self.declare_parameter("wall_hold_s", 1.0)        # how long to trust last wall before seeking
 
-        # State behavior
-        self.declare_parameter("corner_hold_s", 0.55)    # commit time
-        self.declare_parameter("search_turn_w", 0.35)    # gentle bias to find wall
+        # Output smoothing (huge difference!)
+        self.declare_parameter("filter_alpha", 0.35)      # 0..1, higher = smoother/slower
+        self.declare_parameter("filter_dist", 0.35)
+
+        self.declare_parameter("slew_w", 2.5)             # rad/s^2, max change per second
+        self.declare_parameter("slew_v", 0.6)             # m/s^2
+
+        # Loop rate / debug
         self.declare_parameter("publish_rate_hz", 20.0)
-
-        # Debug
         self.declare_parameter("debug", True)
-        self.declare_parameter("debug_every_s", 0.6)
+        self.declare_parameter("debug_every_s", 0.5)
 
-        # Read params
-        self.scan_topic = str(self.get_parameter("scan_topic").value)
-        self.cmd_topic = str(self.get_parameter("cmd_topic").value)
+        # ---- Read params ----
+        self.scan_topic = self.get_parameter("scan_topic").value
+        self.cmd_topic = self.get_parameter("cmd_topic").value
 
         self.follow_side = str(self.get_parameter("follow_side").value).strip().lower()
         if self.follow_side not in ("left", "right"):
             self.follow_side = "left"
 
-        self.side_sign = +1.0 if self.follow_side == "left" else -1.0
         self.scan_yaw_offset_deg = float(self.get_parameter("scan_yaw_offset_deg").value)
 
-        self.desired_dist = float(self.get_parameter("desired_dist").value)
-        self.v_nominal = float(self.get_parameter("v_nominal").value)
+        self.desired = float(self.get_parameter("desired_dist").value)
+        self.L = float(self.get_parameter("lookahead").value)
+
+        self.v_nom = float(self.get_parameter("v_nom").value)
         self.v_min = float(self.get_parameter("v_min").value)
         self.v_max = float(self.get_parameter("v_max").value)
+
         self.w_max = float(self.get_parameter("w_max").value)
-
-        self.front_sector_half_deg = float(self.get_parameter("front_sector_half_deg").value)
-        self.front_stop_dist = float(self.get_parameter("front_stop_dist").value)
-        self.front_slow_dist = float(self.get_parameter("front_slow_dist").value)
-
-        self.side_sector_center_deg = float(self.get_parameter("side_sector_center_deg").value)
-        self.side_sector_half_deg = float(self.get_parameter("side_sector_half_deg").value)
-
-        self.ransac_iters = int(self.get_parameter("ransac_iters").value)
-        self.ransac_thresh = float(self.get_parameter("ransac_thresh").value)
-        self.min_inliers = int(self.get_parameter("min_inliers").value)
+        self.w_deadband = float(self.get_parameter("w_deadband").value)
 
         self.k_dist = float(self.get_parameter("k_dist").value)
-        self.k_head = float(self.get_parameter("k_head").value)
+        self.k_alpha = float(self.get_parameter("k_alpha").value)
 
-        self.w_slew_rate = float(self.get_parameter("w_slew_rate").value)
-        self.w_lowpass_alpha = float(self.get_parameter("w_lowpass_alpha").value)
+        self.theta_far = float(self.get_parameter("theta_far_deg").value)
+        self.theta_near = float(self.get_parameter("theta_near_deg").value)
+        self.win = float(self.get_parameter("ray_window_deg").value)
 
-        self.corner_hold_s = float(self.get_parameter("corner_hold_s").value)
-        self.search_turn_w = float(self.get_parameter("search_turn_w").value)
-        self.publish_rate_hz = float(self.get_parameter("publish_rate_hz").value)
+        self.front_half = float(self.get_parameter("front_half_deg").value)
+        self.front_stop = float(self.get_parameter("front_stop").value)
+        self.front_slow = float(self.get_parameter("front_slow").value)
 
+        self.seek_turn = float(self.get_parameter("seek_turn").value)
+        self.seek_v = float(self.get_parameter("seek_v").value)
+        self.wall_lost_dist = float(self.get_parameter("wall_lost_dist").value)
+        self.wall_hold_s = float(self.get_parameter("wall_hold_s").value)
+
+        self.f_alpha = float(self.get_parameter("filter_alpha").value)
+        self.f_dist = float(self.get_parameter("filter_dist").value)
+
+        self.slew_w = float(self.get_parameter("slew_w").value)
+        self.slew_v = float(self.get_parameter("slew_v").value)
+
+        self.rate_hz = float(self.get_parameter("publish_rate_hz").value)
         self.debug = bool(self.get_parameter("debug").value)
         self.debug_every_s = float(self.get_parameter("debug_every_s").value)
-        self._last_dbg = 0.0
 
-        # ROS
+        # ---- ROS I/O ----
         self.pub = self.create_publisher(Twist, self.cmd_topic, 10)
         self.sub = self.create_subscription(LaserScan, self.scan_topic, self.on_scan, 10)
-        self.timer = self.create_timer(1.0 / self.publish_rate_hz, self.on_timer)
+        self.timer = self.create_timer(1.0 / self.rate_hz, self.on_timer)
 
-        # State
+        # ---- State ----
         self.have_scan = False
-        self.latest_scan: Optional[LaserScan] = None
+        self.last_scan: Optional[LaserScan] = None
 
-        self.mode = "SEARCH"  # SEARCH, FOLLOW, CORNER
-        self.corner_until = 0.0
-        self.wall_good_recent = False
-        self.wall_last_good_t = 0.0
+        self.alpha_f = 0.0          # filtered wall angle (rad)
+        self.dpred_f = self.desired # filtered predicted dist (m)
+        self.last_wall_t = 0.0
 
-        # Output smoothing
-        self.w_prev = 0.0
-        self.v_prev = 0.0
-        self.t_prev = time.time()
+        self.cmd_v = 0.0            # smoothed output
+        self.cmd_w = 0.0
+        self._last_cmd_time = self.get_clock().now().nanoseconds * 1e-9
 
-        self.latest_cmd = Twist()
+        self._last_dbg = 0.0
 
         self.get_logger().info(
-            f"WallFollower ready: side={self.follow_side} desired={self.desired_dist:.2f} "
-            f"yaw_offset={self.scan_yaw_offset_deg:.1f} cmd={self.cmd_topic}"
+            f"WallFollower ready: side={self.follow_side} desired={self.desired:.2f} "
+            f"yaw_offset={self.scan_yaw_offset_deg:+.1f} cmd={self.cmd_topic}"
         )
-
-    def on_timer(self):
-        if not self.have_scan:
-            return
-        self.pub.publish(self.latest_cmd)
 
     def on_scan(self, scan: LaserScan):
         self.have_scan = True
-        self.latest_scan = scan
+        self.last_scan = scan
 
-        now = time.time()
-        dt = max(1e-3, now - self.t_prev)
-        self.t_prev = now
+    def on_timer(self):
+        if not self.have_scan or self.last_scan is None:
+            return
 
-        # ----- FRONT SAFETY -----
-        front = robust_min_in_sector(scan, 0.0, self.front_sector_half_deg, self.scan_yaw_offset_deg)
+        scan = self.last_scan
 
-        # ----- Extract side sector points (robot frame) -----
-        # For right wall, center is -90 (or 270). Keep in robot frame:
-        side_center = +abs(self.side_sector_center_deg) if self.follow_side == "left" else -abs(self.side_sector_center_deg)
-        side_half = abs(self.side_sector_half_deg)
+        now = self.get_clock().now().nanoseconds * 1e-9
+        dt = max(1e-3, now - self._last_cmd_time)
+        self._last_cmd_time = now
 
-        pts: List[Tuple[float, float]] = []
-        d = side_center - side_half
-        while d <= side_center + side_half:
-            r = get_range_at_deg_robot(scan, d, self.scan_yaw_offset_deg)
-            if r is not None:
-                ang = math.radians(d)
-                x = r * math.cos(ang)
-                y = r * math.sin(ang)
-                # Keep points that are plausibly "side-ish" and not behind too much
-                if x > -0.10:
-                    pts.append((x, y))
-            d += 1.0
+        # Determine sign conventions
+        # Robot frame: 0=forward, +CCW left.
+        # For left-follow, positive steering usually means "turn left".
+        # But depending on your motor / esp32 mixing, this might invert.
+        # We'll keep this as "normal ROS": +w = left turn.
+        side_sign = +1.0 if self.follow_side == "left" else -1.0
 
-        model = fit_line_ransac(
-            pts,
-            iters=self.ransac_iters,
-            thresh=self.ransac_thresh,
-            min_inliers=self.min_inliers,
-        )
+        # Rays in robot frame (degrees)
+        # Left follow uses + angles, right follow uses - angles
+        theta_near = side_sign * abs(self.theta_near)
+        theta_far = side_sign * abs(self.theta_far)
 
-        wall_ok = (model is not None)
+        # Get two-ray distances
+        r_near = self.median_window_range(scan, theta_near, self.win)
+        r_far  = self.median_window_range(scan, theta_far, self.win)
+
+        # Front range for corner behavior / collision avoidance
+        r_front = self.median_window_range(scan, 0.0, self.front_half)
+
+        wall_ok = (r_near is not None) and (r_far is not None) and (r_near < self.wall_lost_dist)
 
         if wall_ok:
-            self.wall_good_recent = True
-            self.wall_last_good_t = now
-        else:
-            # keep "recent" true for a short time to avoid instant mode flip
-            if (now - self.wall_last_good_t) > 0.4:
-                self.wall_good_recent = False
+            # Compute wall angle alpha and distance to wall from geometry
+            # Using typical wall-follow derivation:
+            #   alpha = atan2(r_far*cos(theta) - r_near, r_far*sin(theta))
+            # where theta is the separation between the rays (near - far).
+            #
+            # Here theta_near is 90, theta_far is 60, so separation is 30deg.
+            #
+            theta = math.radians(abs(theta_near - theta_far))
+            # Use the ray at theta_far as "a", near as "b" in the classic formula
+            a = float(r_far)
+            b = float(r_near)
 
-        # ----- Compute distance + heading from line -----
-        dist = None
-        phi = 0.0
-        inliers = 0
+            # Protect against degenerate cases
+            denom = max(1e-6, a * math.sin(theta))
+            alpha = math.atan2((a * math.cos(theta) - b), denom)  # rad
 
-        if model is not None:
-            a, b, c = model.a, model.b, model.c
-            inliers = model.inliers
+            # Current perpendicular distance to wall:
+            d = b * math.cos(alpha)
 
-            # distance from robot origin to line (since normalized):
-            dist0 = abs(c)
+            # Predict distance at lookahead L:
+            d_pred = d + self.L * math.sin(alpha)
 
-            # heading of wall: tangent t = (-b, a)
-            tx, ty = (-b), (a)
-            # choose direction such that tx points forward-ish
-            if tx < 0.0:
-                tx, ty = -tx, -ty
-            phi = wrap_pi(math.atan2(ty, tx))  # angle of wall tangent relative to robot x axis
+            # Filter them
+            self.alpha_f = (1.0 - self.f_alpha) * self.alpha_f + self.f_alpha * alpha
+            self.dpred_f = (1.0 - self.f_dist) * self.dpred_f + self.f_dist * d_pred
 
-            dist = dist0
+            self.last_wall_t = now
 
-        # ----- MODE LOGIC -----
-        # Trigger CORNER if front is close (commit turn away from wall)
-        if front is not None and front < self.front_stop_dist:
-            self.mode = "CORNER"
-            self.corner_until = now + self.corner_hold_s
+            # Control: keep dpred near desired, and keep alpha near 0
+            e = (self.desired - self.dpred_f)   # + => need to get closer to wall
+            w_cmd = side_sign * (self.k_dist * e + self.k_alpha * (-self.alpha_f))
 
-        if self.mode == "CORNER":
-            if now < self.corner_until:
-                v_cmd = 0.0
-                w_cmd = -0.9 * self.side_sign  # turn away from wall side
-                self.latest_cmd = self.smooth_cmd(v_cmd, w_cmd, dt)
-                self.maybe_debug(now, mode="CORNER", dist=dist, phi=phi, front=front, inliers=inliers)
-                return
-            # after hold, try to follow if wall is back
-            self.mode = "FOLLOW" if self.wall_good_recent else "SEARCH"
+            # Speed scheduling: slow down if turning hard or if front is close
+            v_cmd = self.v_nom
 
-        if self.mode == "SEARCH":
-            # move slowly forward with a gentle bias toward the wall side
-            # until we get a stable wall fit.
-            v_cmd = self.v_min
-            w_cmd = (self.search_turn_w * self.side_sign)  # gentle toward wall side
+            turn_mag = min(1.0, abs(w_cmd) / max(1e-6, self.w_max))
+            v_cmd *= (1.0 - 0.55 * turn_mag)
 
-            # slow down if something ahead
-            if front is not None:
-                if front < self.front_slow_dist:
-                    t = (front - self.front_stop_dist) / max(1e-3, (self.front_slow_dist - self.front_stop_dist))
-                    v_cmd = clamp(v_cmd * clamp(t, 0.0, 1.0), 0.0, self.v_min)
+            # Front slow/stop
+            if r_front is not None:
+                if r_front < self.front_stop:
+                    v_cmd = 0.0
+                    # turn away from obstacle (away from front => turn toward open space)
+                    w_cmd = -side_sign * 0.7
+                elif r_front < self.front_slow:
+                    t = (r_front - self.front_stop) / max(1e-3, (self.front_slow - self.front_stop))
+                    v_cmd = clamp(v_cmd * t, 0.0, self.v_nom)
 
-            if self.wall_good_recent:
-                self.mode = "FOLLOW"
+            v_cmd = clamp(v_cmd, self.v_min if v_cmd > 0.0 else 0.0, self.v_max)
+            w_cmd = clamp(w_cmd, -self.w_max, self.w_max)
 
-            self.latest_cmd = self.smooth_cmd(v_cmd, w_cmd, dt)
-            self.maybe_debug(now, mode="SEARCH", dist=dist, phi=phi, front=front, inliers=inliers)
+            # Deadband to stop dithering
+            if abs(w_cmd) < self.w_deadband:
+                w_cmd = 0.0
+
+            # Slew-rate limit (prevents snap left-right)
+            self.cmd_w = self.slew_limit(self.cmd_w, w_cmd, self.slew_w, dt)
+            self.cmd_v = self.slew_limit(self.cmd_v, v_cmd, self.slew_v, dt)
+
+            self.publish(self.cmd_v, self.cmd_w)
+
+            if self.debug and (now - self._last_dbg) > self.debug_every_s:
+                self._last_dbg = now
+                self.get_logger().info(
+                    f"follow d_pred={self.dpred_f:.3f} e={e:+.3f} alpha={self.alpha_f:+.3f} "
+                    f"front={(r_front if r_front is not None else -1.0):.3f} "
+                    f"cmd v={self.cmd_v:.2f} w={self.cmd_w:+.2f}"
+                )
             return
 
-        # ----- FOLLOW MODE -----
-        if dist is None:
-            # Lost wall: go SEARCH
-            self.mode = "SEARCH"
-            v_cmd = self.v_min
-            w_cmd = (self.search_turn_w * self.side_sign)
-            self.latest_cmd = self.smooth_cmd(v_cmd, w_cmd, dt)
-            self.maybe_debug(now, mode="FOLLOW->SEARCH", dist=None, phi=phi, front=front, inliers=inliers)
-            return
+        # ---- SEEK mode (wall missing): DO NOT SPIN IN PLACE ----
+        # If we recently saw a wall, gently steer back toward it while moving forward.
+        wall_recent = (now - self.last_wall_t) < self.wall_hold_s
 
-        # Distance error
-        e = dist - self.desired_dist
+        v_cmd = self.seek_v
+        w_cmd = side_sign * self.seek_turn
 
-        # Core control:
-        # - distance term: for left wall, positive e (too far) -> turn left (+w)
-        # - for right wall, positive e -> turn right (-w) => side_sign handles that
-        w_dist = self.side_sign * (self.k_dist * e)
+        # If front is close, stop and turn away to avoid punching into things
+        if r_front is not None and r_front < self.front_stop:
+            v_cmd = 0.0
+            w_cmd = -side_sign * 0.7
+        elif r_front is not None and r_front < self.front_slow:
+            t = (r_front - self.front_stop) / max(1e-3, (self.front_slow - self.front_stop))
+            v_cmd = clamp(v_cmd * t, 0.0, self.seek_v)
 
-        # Heading term: align robot to wall direction
-        w_head = self.k_head * phi
+        # If not recent, reduce steering even more (so it doesn't “windmill”)
+        if not wall_recent:
+            w_cmd *= 0.5
 
-        w_cmd = w_dist + w_head
+        v_cmd = clamp(v_cmd, 0.0, self.v_max)
         w_cmd = clamp(w_cmd, -self.w_max, self.w_max)
+        if abs(w_cmd) < self.w_deadband:
+            w_cmd = 0.0
 
-        # Speed scheduling: slow down with more turn
-        turn_mag = min(1.0, abs(w_cmd) / max(1e-6, self.w_max))
-        v_cmd = self.v_nominal * (1.0 - 0.55 * turn_mag)
-        v_cmd = clamp(v_cmd, self.v_min, self.v_max)
+        self.cmd_w = self.slew_limit(self.cmd_w, w_cmd, self.slew_w, dt)
+        self.cmd_v = self.slew_limit(self.cmd_v, v_cmd, self.slew_v, dt)
 
-        # Front slow
-        if front is not None and front < self.front_slow_dist:
-            if front < self.front_stop_dist:
-                self.mode = "CORNER"
-                self.corner_until = now + self.corner_hold_s
-                v_cmd = 0.0
-                w_cmd = -0.9 * self.side_sign
-            else:
-                t = (front - self.front_stop_dist) / max(1e-3, (self.front_slow_dist - self.front_stop_dist))
-                v_cmd = clamp(v_cmd * clamp(t, 0.0, 1.0), 0.0, v_cmd)
+        self.publish(self.cmd_v, self.cmd_w)
 
-        self.latest_cmd = self.smooth_cmd(v_cmd, w_cmd, dt)
-        self.maybe_debug(now, mode="FOLLOW", dist=dist, phi=phi, front=front, inliers=inliers)
+        if self.debug and (now - self._last_dbg) > self.debug_every_s:
+            self._last_dbg = now
+            self.get_logger().info(
+                f"seek wall_recent={wall_recent} front={(r_front if r_front is not None else -1.0):.3f} "
+                f"cmd v={self.cmd_v:.2f} w={self.cmd_w:+.2f}"
+            )
 
-    def smooth_cmd(self, v_cmd: float, w_cmd: float, dt: float) -> Twist:
-        # Slew limit angular velocity (prevents flip-flop)
-        max_dw = self.w_slew_rate * dt
-        dw = clamp(w_cmd - self.w_prev, -max_dw, +max_dw)
-        w_limited = self.w_prev + dw
-
-        # Low-pass filter angular
-        a = clamp(self.w_lowpass_alpha, 0.0, 1.0)
-        w_smooth = (1.0 - a) * self.w_prev + a * w_limited
-
-        # Slight v smoothing too (helps inching)
-        v_smooth = 0.6 * self.v_prev + 0.4 * v_cmd
-
-        self.w_prev = w_smooth
-        self.v_prev = v_smooth
-
+    def publish(self, v: float, w: float):
         msg = Twist()
-        msg.linear.x = float(v_smooth)
-        msg.angular.z = float(w_smooth)
-        return msg
+        msg.linear.x = float(v)
+        msg.angular.z = float(w)
+        self.pub.publish(msg)
 
-    def maybe_debug(self, now: float, mode: str, dist: Optional[float], phi: float,
-                    front: Optional[float], inliers: int):
-        if not self.debug:
-            return
-        if (now - self._last_dbg) < self.debug_every_s:
-            return
-        self._last_dbg = now
+    def slew_limit(self, current: float, target: float, max_rate: float, dt: float) -> float:
+        # max change = max_rate * dt
+        step = max_rate * dt
+        delta = target - current
+        if delta > step:
+            return current + step
+        if delta < -step:
+            return current - step
+        return target
 
-        d_str = "None" if dist is None else f"{dist:.3f}"
-        f_str = "None" if front is None else f"{front:.3f}"
-        self.get_logger().info(
-            f"{mode}: dist={d_str} phi={math.degrees(phi):+.1f}deg front={f_str} "
-            f"inl={inliers} cmd v={self.latest_cmd.linear.x:.2f} w={self.latest_cmd.angular.z:+.2f}"
-        )
+    def deg_to_rad_in_scan(self, scan: LaserScan, deg_robot: float) -> float:
+        # Apply yaw offset so deg_robot=0 means robot forward
+        deg_scan = wrap_deg_0_360(deg_robot + self.scan_yaw_offset_deg)
+
+        # If scan uses -pi..pi, map to -180..180
+        if scan.angle_min < 0.0:
+            if deg_scan > 180.0:
+                deg_scan -= 360.0
+
+        return math.radians(deg_scan)
+
+    def range_at_deg(self, scan: LaserScan, deg_robot: float) -> Optional[float]:
+        if scan.angle_increment == 0.0 or len(scan.ranges) == 0:
+            return None
+
+        ang = self.deg_to_rad_in_scan(scan, deg_robot)
+        idx = int(round((ang - scan.angle_min) / scan.angle_increment))
+        if idx < 0 or idx >= len(scan.ranges):
+            return None
+
+        r = float(scan.ranges[idx])
+        if not is_valid(scan, r):
+            return None
+        return r
+
+    def median_window_range(self, scan: LaserScan, deg_center: float, half_window_deg: float) -> Optional[float]:
+        vals: List[float] = []
+        d = deg_center - half_window_deg
+        while d <= deg_center + half_window_deg:
+            r = self.range_at_deg(scan, d)
+            if r is not None:
+                vals.append(r)
+            d += 1.0
+
+        if not vals:
+            return None
+        vals.sort()
+        return vals[len(vals) // 2]
 
 
 def main():
