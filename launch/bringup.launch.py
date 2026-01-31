@@ -63,9 +63,21 @@ def generate_launch_description():
                 "-p", ["follow_side:=", follow_side],
 
                 "-p", "desired_dist:=0.35",
-                "-p", "v_nom:=0.18",
-                "-p", "v_min:=0.06",
-                "-p", "w_max:=1.2",
+                "-p", "v_nom:=0.16",
+                "-p", "v_min:=0.05",
+                "-p", "w_max:=1.1",
+
+                "-p", "k_dist:=1.6",
+                "-p", "k_ang:=1.0",
+
+                "-p", "far_dist:=0.65",
+                "-p", "far_turn:=0.55",
+                "-p", "far_speed:=0.08",
+
+                "-p", "wall_hold_s:=0.40",
+                "-p", "wall_filter_tau:=0.25",
+                "-p", "cmd_smooth_tau:=0.22",
+                "-p", "w_deadband:=0.05",
 
                 # corner / clutter behavior
                 "-p", "front_stop:=0.32",
