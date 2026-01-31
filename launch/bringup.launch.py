@@ -144,8 +144,6 @@ def generate_launch_description():
                 "--ros-args",
                 "-p", "in_cmd:=/cmd_vel_raw",
                 "-p", "out_cmd:=/cmd_vel_safe",
-                # leave stop_topic empty to disable stop gating (lidar-only focus)
-                "-p", "stop_topic:=",
                 "-p", "publish_rate_hz:=20.0",
             ],
             output="screen",
