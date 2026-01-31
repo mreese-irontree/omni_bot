@@ -68,12 +68,12 @@ class WallFollower(Node):
         self.declare_parameter("front_slow", 0.85)
 
         # Control gains
-        self.declare_parameter("k_dist", 2.3)     # distance error -> turn
+        self.declare_parameter("k_dist", 1.5)     # distance error -> turn
         self.declare_parameter("k_ang", 1.4)      # wall angle -> turn
-        self.declare_parameter("corner_turn_gain", 1.2)  # extra turning when cornering
+        self.declare_parameter("corner_turn_gain", 1.0)  # extra turning when cornering
 
         # Command smoothing
-        self.declare_parameter("cmd_smooth_tau", 0.20)  # seconds
+        self.declare_parameter("cmd_smooth_tau", 0.30)  # seconds
         self.declare_parameter("publish_rate_hz", 20.0)
 
         # Debug
