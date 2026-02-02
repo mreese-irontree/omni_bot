@@ -18,10 +18,9 @@ endif()
 find_package(ament_cmake REQUIRED)
 
 # -------------------------
-# Install Python scripts
+# Install Python scripts (ROS nodes)
 # -------------------------
-# Put your ROS Python nodes in omni_bot/scripts/*.py
-# and make sure they are executable: chmod +x scripts/*.py
+# Make sure these files exist in omni_bot/scripts/
 install(PROGRAMS
   scripts/cmdvel_to_serial.py
   scripts/cmdvel_to_odom.py
@@ -29,7 +28,7 @@ install(PROGRAMS
 )
 
 # -------------------------
-# Install share resources
+# Install package resources
 # -------------------------
 install(DIRECTORY
   launch
@@ -38,7 +37,7 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}
 )
 
-# If you still have a gazebo "worlds" folder, install it too (optional)
+# Optional: gazebo worlds folder
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/worlds")
   install(DIRECTORY
     worlds

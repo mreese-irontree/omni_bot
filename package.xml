@@ -3,11 +3,29 @@
 <package format="3">
   <name>omni_bot</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>omni_bot</description>
   <maintainer email="mreese@irontreesolutions.com">Matt Reese</maintainer>
-  <license>TODO: License declaration</license>
+  <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- runtime -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <!-- for mapping bringup -->
+  <exec_depend>slam_toolbox</exec_depend>
+  <exec_depend>joy</exec_depend>
+  <exec_depend>teleop_twist_joy</exec_depend>
+
+  <!-- only if your cmdvel_to_serial.py uses pyserial -->
+  <exec_depend>python3-serial</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
