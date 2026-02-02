@@ -19,6 +19,8 @@ def generate_launch_description():
 
     serial_port = LaunchConfiguration('serial_port')
     serial_baud = LaunchConfiguration('serial_baud')
+    esp_port = LaunchConfiguration('esp_port')
+    lidar_port = LaunchConfiguration('lidar_port')
 
     sensor_delay_sec = LaunchConfiguration('sensor_delay_sec')
 
@@ -41,6 +43,7 @@ def generate_launch_description():
     ld19_launch = os.path.join(ldlidar_share, 'launch', 'ld19.launch.py')
     lidar_action = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(ld19_launch),
+        launch_arguments={'port_name': lidar_port}.items(),
         condition=IfCondition(start_lidar),
     )
 
@@ -112,7 +115,7 @@ def generate_launch_description():
         executable='cmdvel_to_serial.py',
         output='screen',
         parameters=[{
-            'port': serial_port,
+            'port': esp_port,
             'baud': serial_baud,
             'wheel_base': 0.22,
             'max_lin': 0.35,
@@ -132,6 +135,8 @@ def generate_launch_description():
 
         DeclareLaunchArgument('serial_port', default_value='/dev/ttyUSB0'),
         DeclareLaunchArgument('serial_baud', default_value='115200'),
+        DeclareLaunchArgument('esp_port', default_value='/dev/serial/by-path/platform-fd500000.pcie-pci-0000:01:00.0-usb-0:1.1:1.0-port0', description='ESP32 serial device path'),
+        DeclareLaunchArgument('lidar_port', default_value='/dev/serial/by-path/platform-fd500000.pcie-pci-0000:01:00.0-usb-0:1.2:1.0-port0', description='LD19 LiDAR serial device path'),
 
         rsp,
         lidar_delayed,
