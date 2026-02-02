@@ -3,33 +3,21 @@ slam_toolbox:
     use_sim_time: false
 
     # Frames
-    odom_frame: odom
     map_frame: map
+    odom_frame: odom
     base_frame: base_link
-
-    # Scan topic
     scan_topic: /scan
 
     mode: mapping
 
+    # If your LD19 is noisy, these help:
+    minimum_time_interval: 0.2
+    transform_timeout: 0.2
+
+    # Keep it lightweight on the Pi
     resolution: 0.05
     max_laser_range: 12.0
 
-    transform_timeout: 0.2
-    tf_buffer_duration: 30.0
-
-    # Scan matching
-    use_scan_matching: true
-    use_scan_barycenter: true
-    minimum_travel_distance: 0.10
-    minimum_travel_heading: 0.10
-    scan_buffer_size: 10
-    scan_buffer_maximum_scan_distance: 10.0
-
-    # Loop closure
+    # Conservative settings to start
     do_loop_closing: true
     loop_search_maximum_distance: 3.0
-    loop_match_minimum_chain_size: 10
-    loop_match_maximum_variance_coarse: 3.0
-    loop_match_minimum_response_coarse: 0.35
-    loop_match_minimum_response_fine: 0.45
