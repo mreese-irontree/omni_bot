@@ -17,12 +17,7 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 
-# -------------------------
-# Install Python scripts (ROS nodes)
-# -------------------------
-# Make sure these files exist in omni_bot/scripts/
 install(PROGRAMS
-  scripts/cmdvel_to_serial.py
   scripts/cmdvel_to_odom.py
   DESTINATION lib/${PROJECT_NAME}
 )
