@@ -11,36 +11,37 @@
     </gazebo>
 
     <gazebo>
-        <plugin name="skid_steer_drive" filename="libgazebo_ros_diff_drive.so">  
+        <plugin name="gz::sim::systems::DiffDrive" filename="gz-sim-diff-drive-system">  
             <ros>
                 <namespace> </namespace>
             </ros>
             
-            <!-- WHEEL INFORMATION -->
-             <num_wheel_pairs>2</num_wheel_pairs>
-
+            <!-- Joints -->
             <left_joint>left_front_wheel_joint</left_joint>
             <left_joint>left_rear_wheel_joint</left_joint>
 
             <right_joint>right_front_wheel_joint</right_joint>
             <right_joint>right_rear_wheel_joint</right_joint>
             
+            <!-- Geometry-->
             <wheel_separation>${wheel_separation}</wheel_separation>
-            <wheel_separation>${wheel_separation}</wheel_separation>
-            
-            <wheel_diameter>${wheel_diameter}</wheel_diameter>
-            <wheel_diameter>${wheel_diameter}</wheel_diameter>
+            <wheel_radius>${wheel_radius}</wheel_radius>
 
-            <max_wheel_torque>${gazebo_max_wheel_torque}</max_wheel_torque>
-            <max_wheel_acceleration>${gazebo_max_wheel_acceleration}</max_wheel_acceleration>
+            <!-- Limits -->
+            <max_linear_velocity>1.0</max_linear_velocity>
+            <max_angular_velocity>2.0</max_angular_velocity>
 
-            <!-- OUTPUT -->
-            <odometry_frame>odom</odometry_frame>
-            <robot_base_frame>base_link</robot_base_frame>
+            <!-- Frames -->
+            <odom_frame>odom</odom_frame>
+            <base_frame>base_link</base_frame>
 
+            <!-- Topic inside Gazebo transport -->
+            <topic>cmd_vel</topic>
+
+            <!-- Odometry publish -->
             <publish_odom>true</publish_odom>
-            <publish_odom_tf>true</publish_odom_tf>
-            <publish_wheel_tf>true</publish_wheel_tf>
+            <publish_tf>true</publish_tf>
+            
         </plugin>
     </gazebo>
 
